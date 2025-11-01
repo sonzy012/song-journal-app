@@ -1128,8 +1128,8 @@ function renderEntries(entries) {
             ${mediaHtml}
             <div class="entry-preview">${entry.content}</div>
             <div class="entry-actions" style="${selectionMode ? 'display:none;' : ''}">
-                <button class="btn-text" onclick="event.stopPropagation();editEntry('${entry.fileId}')">Edit</button>
-                <button class="btn-delete" onclick="event.stopPropagation();deleteEntry('${entry.fileId}')">Delete</button>
+                <button class="btn-edit" onclick="event.stopPropagation();editEntry('${entry.fileId}')" title="Edit">✏️</button>
+                <button class="btn-delete" onclick="event.stopPropagation();deleteEntry('${entry.fileId}')" title="Delete">🗑️</button>
             </div>
         `;
         
@@ -1524,9 +1524,9 @@ function showDayEntries(dateStr, entries) {
                 ${locationHtml}
                 ${mediaHtml}
                 <div class="entry-preview">${entry.content}</div>
-                <div class="entry-actions">
-                    <button class="btn-text" onclick="event.stopPropagation();editEntry('${entry.fileId}')">Edit</button>
-                    <button class="btn-delete" onclick="event.stopPropagation();deleteEntry('${entry.fileId}')">Delete</button>
+                <div class="entry-actions" style="position:relative;opacity:1;margin-top:12px;">
+                    <button class="btn-edit" onclick="event.stopPropagation();editEntry('${entry.fileId}')" title="Edit">✏️</button>
+                    <button class="btn-delete" onclick="event.stopPropagation();deleteEntry('${entry.fileId}')" title="Delete">🗑️</button>
                 </div>
             `;
             dayEntries.appendChild(entryDiv);
@@ -1844,12 +1844,12 @@ function renderSavedLocations() {
             card.style.cursor = 'default';
             
             const hasPhoto = location.photo && location.photo.startsWith('http');
-            const imageUrl = hasPhoto ? location.photo : `https://maps.googleapis.com/maps/api/staticmap?center=${location.lat},${location.lng}&zoom=14&size=300x300&markers=color:red%7C${location.lat},${location.lng}&key=${CONFIG.MAPS_API_KEY}`;
+            const imageUrl = hasPhoto ? location.photo : `https://maps.googleapis.com/maps/api/staticmap?center=${location.lat},${location.lng}&zoom=14&size=200x200&markers=color:red%7C${location.lat},${location.lng}&key=${CONFIG.MAPS_API_KEY}`;
             
             card.innerHTML = `
                 <div class="entry-title">${location.name}</div>
                 <div style="color:#666;font-size:14px;margin:8px 0;">${location.address}</div>
-                <img src="${imageUrl}" alt="${location.name}" loading="lazy" style="width:100%;max-width:300px;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#f0f0f0;margin:8px 0;">
+                <img src="${imageUrl}" alt="${location.name}" loading="lazy" style="width:100%;max-width:150px;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#f0f0f0;margin:8px 0;">
                 <div class="entry-actions">
                     <button class="btn-delete" onclick="deleteSavedLocation('${location.id}')">Delete</button>
                 </div>
@@ -1974,7 +1974,7 @@ function renderLocationHistory(filterCategory = 'all') {
         card.style.cursor = 'pointer';
         
         const hasPhoto = item.location.photo && item.location.photo.startsWith('http');
-        const imageUrl = hasPhoto ? item.location.photo : `https://maps.googleapis.com/maps/api/staticmap?center=${item.location.lat},${item.location.lng}&zoom=14&size=300x300&markers=color:red%7C${item.location.lat},${item.location.lng}&key=${CONFIG.MAPS_API_KEY}`;
+        const imageUrl = hasPhoto ? item.location.photo : `https://maps.googleapis.com/maps/api/staticmap?center=${item.location.lat},${item.location.lng}&zoom=14&size=200x200&markers=color:red%7C${item.location.lat},${item.location.lng}&key=${CONFIG.MAPS_API_KEY}`;
         
         const visitCount = item.dates.length;
         const lastVisit = new Date(item.dates[item.dates.length - 1]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -1992,7 +1992,7 @@ function renderLocationHistory(filterCategory = 'all') {
             <div class="entry-title">${item.location.name}</div>
             <div style="color:#666;font-size:14px;margin:8px 0;">${item.location.address}</div>
             ${tagsHtml}
-            <img src="${imageUrl}" alt="${item.location.name}" loading="lazy" style="width:100%;max-width:300px;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#f0f0f0;margin:8px 0;">
+            <img src="${imageUrl}" alt="${item.location.name}" loading="lazy" style="width:100%;max-width:150px;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#f0f0f0;margin:8px 0;">
             <div style="color:#8e8e93;font-size:13px;margin:8px 0;">📍 Visited ${visitCount} time${visitCount > 1 ? 's' : ''} • Last: ${lastVisit}</div>
         `;
         
