@@ -7,6 +7,7 @@ let accessToken = null;
 let folderId = null;
 let entriesCache = [];
 let isLoading = false;
+let mediaCache = {};
 
 function gapiLoaded() {
     gapi.load('client', initializeGapiClient);
@@ -949,6 +950,11 @@ document.getElementById('saveBtn').onclick = async () => {
             mediaUrls.push(mediaItem);
         }
 
+        let allTags = [...entryTags];
+        if (!editingEntryId && selectedLocation && selectedLocation.autoTags) {
+            allTags = [...new Set([...entryTags, ...selectedLocation.autoTags])];
+        }
+        
         const entry = {
             title: title || 'Untitled',
             content: content || '',
@@ -956,7 +962,7 @@ document.getElementById('saveBtn').onclick = async () => {
             date: date,
             media: [...existingMedia, ...mediaUrls],
             location: selectedLocation,
-            tags: entryTags,
+            tags: allTags,
             bookmarked: editingEntryId ? (entriesCache.find(e => e.fileId === editingEntryId)?.bookmarked || false) : false
         };
 
@@ -1229,17 +1235,20 @@ function renderEntries(entries) {
                 return entryDate >= weekStart && entryDate <= today;
             } else if (selectedDateFilter === 'lastWeek') {
                 const dayOfWeek = today.getDay();
-                const lastWeekStart = new Date(today);
-                lastWeekStart.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1) - 7);
-                const lastWeekEnd = new Date(lastWeekStart);
-                lastWeekEnd.setDate(lastWeekStart.getDate() + 6);
+                const thisWeekStart = new Date(today);
+                thisWeekStart.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+                const lastWeekStart = new Date(thisWeekStart);
+                lastWeekStart.setDate(thisWeekStart.getDate() - 7);
+                const lastWeekEnd = new Date(thisWeekStart);
+                lastWeekEnd.setDate(thisWeekStart.getDate() - 1);
                 return entryDate >= lastWeekStart && entryDate <= lastWeekEnd;
             } else if (selectedDateFilter === 'thisMonth') {
                 return entryDate.getMonth() === today.getMonth() && entryDate.getFullYear() === today.getFullYear();
             } else if (selectedDateFilter === 'past3Months') {
                 const threeMonthsAgo = new Date(today);
                 threeMonthsAgo.setMonth(today.getMonth() - 3);
-                return entryDate >= threeMonthsAgo && entryDate <= today;
+                const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
+                return entryDate >= threeMonthsAgo && entryDate <= lastMonthEnd;
             } else if (selectedDateFilter === 'onThisDay') {
                 const entryMM = String(entryDate.getMonth() + 1).padStart(2, '0');
                 const entryDD = String(entryDate.getDate()).padStart(2, '0');
@@ -1363,11 +1372,18 @@ function renderEntries(entries) {
     
     document.querySelectorAll('img[data-media-id]').forEach(img => {
         const mediaId = img.getAttribute('data-media-id');
-        fetch(`https://www.googleapis.com/drive/v3/files/${mediaId}?alt=media`, {
-            headers: { Authorization: 'Bearer ' + accessToken }
-        }).then(r => r.blob()).then(blob => {
-            img.src = URL.createObjectURL(blob);
-        });
+        
+        if (mediaCache[mediaId]) {
+            img.src = mediaCache[mediaId];
+        } else {
+            fetch(`https://www.googleapis.com/drive/v3/files/${mediaId}?alt=media`, {
+                headers: { Authorization: 'Bearer ' + accessToken }
+            }).then(r => r.blob()).then(blob => {
+                const url = URL.createObjectURL(blob);
+                mediaCache[mediaId] = url;
+                img.src = url;
+            });
+        }
     });
 }
 
@@ -1795,11 +1811,18 @@ function showDayEntries(dateStr, entries) {
         
         document.querySelectorAll('#dayEntries img[data-media-id]').forEach(img => {
             const mediaId = img.getAttribute('data-media-id');
-            fetch(`https://www.googleapis.com/drive/v3/files/${mediaId}?alt=media`, {
-                headers: { Authorization: 'Bearer ' + accessToken }
-            }).then(r => r.blob()).then(blob => {
-                img.src = URL.createObjectURL(blob);
-            });
+            
+            if (mediaCache[mediaId]) {
+                img.src = mediaCache[mediaId];
+            } else {
+                fetch(`https://www.googleapis.com/drive/v3/files/${mediaId}?alt=media`, {
+                    headers: { Authorization: 'Bearer ' + accessToken }
+                }).then(r => r.blob()).then(blob => {
+                    const url = URL.createObjectURL(blob);
+                    mediaCache[mediaId] = url;
+                    img.src = url;
+                });
+            }
         });
     }
 }
@@ -1872,11 +1895,17 @@ window.editEntry = async function(fileId) {
                 img.alt = 'Photo';
                 item.appendChild(img);
                 
-                fetch(`https://www.googleapis.com/drive/v3/files/${media.id}?alt=media`, {
-                    headers: { Authorization: 'Bearer ' + accessToken }
-                }).then(r => r.blob()).then(blob => {
-                    img.src = URL.createObjectURL(blob);
-                });
+                if (mediaCache[media.id]) {
+                    img.src = mediaCache[media.id];
+                } else {
+                    fetch(`https://www.googleapis.com/drive/v3/files/${media.id}?alt=media`, {
+                        headers: { Authorization: 'Bearer ' + accessToken }
+                    }).then(r => r.blob()).then(blob => {
+                        const url = URL.createObjectURL(blob);
+                        mediaCache[media.id] = url;
+                        img.src = url;
+                    });
+                }
             } else {
                 const video = document.createElement('video');
                 video.muted = true;
@@ -1885,11 +1914,17 @@ window.editEntry = async function(fileId) {
                 }
                 item.appendChild(video);
                 
-                fetch(`https://www.googleapis.com/drive/v3/files/${media.id}?alt=media`, {
-                    headers: { Authorization: 'Bearer ' + accessToken }
-                }).then(r => r.blob()).then(blob => {
-                    video.src = URL.createObjectURL(blob);
-                });
+                if (mediaCache[media.id]) {
+                    video.src = mediaCache[media.id];
+                } else {
+                    fetch(`https://www.googleapis.com/drive/v3/files/${media.id}?alt=media`, {
+                        headers: { Authorization: 'Bearer ' + accessToken }
+                    }).then(r => r.blob()).then(blob => {
+                        const url = URL.createObjectURL(blob);
+                        mediaCache[media.id] = url;
+                        video.src = url;
+                    });
+                }
                 
                 const playIcon = document.createElement('div');
                 playIcon.className = 'play-icon';
