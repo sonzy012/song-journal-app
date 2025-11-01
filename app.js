@@ -262,8 +262,6 @@ function getLocationTags(types, name) {
         'park': 'park',
         'natural_feature': 'nature',
         'tourist_attraction': 'attraction',
-        'point_of_interest': 'attraction',
-        'establishment': 'place',
         'airport': 'airport',
         'hospital': 'hospital',
         'doctor': 'medical',
@@ -754,10 +752,6 @@ document.getElementById('saveBtn').onclick = async () => {
             mediaUrls.push(mediaItem);
         }
 
-        const autoTags = generateAutoTags(title, content, selectedLocation);
-        const allTags = [...new Set([...entryTags, ...autoTags])];
-        console.log('Saving entry with tags:', { entryTags, autoTags, allTags });
-        
         const entry = {
             title: title || 'Untitled',
             content: content || '',
@@ -765,7 +759,7 @@ document.getElementById('saveBtn').onclick = async () => {
             date: date,
             media: [...existingMedia, ...mediaUrls],
             location: selectedLocation,
-            tags: allTags
+            tags: entryTags
         };
 
         if (editingEntryId) {
