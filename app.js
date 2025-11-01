@@ -596,8 +596,6 @@ async function extractLocationFromPhoto(file) {
                         const longitude = convertDMSToDD(lon, lonRef);
                         console.log('Converted coordinates:', { latitude, longitude });
                         await suggestNearbyPlaces(latitude, longitude);
-                    } else {
-                        console.log('No GPS data found in photo. This photo may be from Google Photos or has no location data.');
                     }
                     resolve();
                 });
