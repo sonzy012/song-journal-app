@@ -44,14 +44,22 @@
         </div>
 
         <div id="timelineView" class="timeline">
-            <div style="padding:20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e5e5ea;">
-                <div id="dateFilters" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
-                <select id="sortEntriesSelect" style="padding:10px;border:1px solid #e5e5ea;border-radius:8px;font-size:15px;margin-left:auto;">
-                    <option value="desc">Newest First</option>
-                    <option value="asc">Oldest First</option>
-                </select>
+            <div class="filters-container">
+                <div class="filter-section">
+                    <div class="filter-label">📅 Date Range</div>
+                    <div id="dateFilters" class="filter-buttons"></div>
+                </div>
+                <div class="filter-section" id="tagFilterSection" style="display:none;">
+                    <div class="filter-label">🏷️ Tags</div>
+                    <div id="tagFilters" class="filter-buttons"></div>
+                </div>
+                <div class="sort-section">
+                    <select id="sortEntriesSelect" class="sort-select">
+                        <option value="desc">↓ Newest First</option>
+                        <option value="asc">↑ Oldest First</option>
+                    </select>
+                </div>
             </div>
-            <div id="tagFilters" class="tag-filters" style="padding:0 20px 20px 20px;display:flex;gap:8px;flex-wrap:wrap;"></div>
             <div id="entriesList"></div>
         </div>
 

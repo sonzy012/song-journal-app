@@ -426,6 +426,58 @@ body {
     z-index: 98;
 }
 
+.filters-container {
+    background: white;
+    padding: 20px;
+    border-bottom: 1px solid #e5e5ea;
+}
+
+.filter-section {
+    margin-bottom: 16px;
+}
+
+.filter-section:last-child {
+    margin-bottom: 0;
+}
+
+.filter-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #8e8e93;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.filter-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.sort-section {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #f0f0f0;
+}
+
+.sort-select {
+    padding: 8px 12px;
+    border: 1px solid #e5e5ea;
+    border-radius: 8px;
+    font-size: 14px;
+    background: white;
+    color: #333;
+    cursor: pointer;
+    outline: none;
+}
+
+.sort-select:focus {
+    border-color: #007aff;
+}
+
 .search-input {
     width: 100%;
     padding: 10px 16px;

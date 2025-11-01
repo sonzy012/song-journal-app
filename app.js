@@ -1391,7 +1391,8 @@ function renderDateFilters() {
 
 function renderTagFilters() {
     const filtersContainer = document.getElementById('tagFilters');
-    if (!filtersContainer) return;
+    const filterSection = document.getElementById('tagFilterSection');
+    if (!filtersContainer || !filterSection) return;
     
     const tagCounts = {};
     let untaggedCount = 0;
@@ -1411,13 +1412,11 @@ function renderTagFilters() {
     filtersContainer.innerHTML = '';
     
     if (sortedTags.length === 0 && untaggedCount === 0) {
-        filtersContainer.style.display = 'none';
+        filterSection.style.display = 'none';
         return;
     }
     
-    filtersContainer.style.display = 'flex';
-    filtersContainer.style.paddingTop = '0';
-    filtersContainer.style.paddingBottom = '20px';
+    filterSection.style.display = 'block';
     
     sortedTags.forEach(tag => {
         const btn = document.createElement('button');
