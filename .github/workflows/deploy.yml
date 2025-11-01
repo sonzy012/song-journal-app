@@ -13,11 +13,12 @@ jobs:
       - name: Prepare deployment
         run: |
           mkdir deploy
-          cp *.html *.css *.js *.json deploy/ 2>/dev/null || true
+          cp index.html style.css app.js pagination.js manifest.json deploy/
           echo "const CONFIG = {" > deploy/config.js
           echo "  CLIENT_ID: '${{ secrets.CLIENT_ID }}'," >> deploy/config.js
           echo "  MAPS_API_KEY: '${{ secrets.MAPS_API_KEY }}'" >> deploy/config.js
           echo "};" >> deploy/config.js
+          cat deploy/config.js
           ls -la deploy/
       
       - name: Deploy to GitHub Pages
