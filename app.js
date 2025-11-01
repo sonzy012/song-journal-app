@@ -368,30 +368,55 @@ document.getElementById('addLocationBtn').onclick = () => {
 };
 
 function detectCurrentLocation() {
+    console.log('Detect location clicked');
+    
     if (!navigator.geolocation) {
         alert('Geolocation is not supported by your browser');
         return;
     }
     
     const btn = document.getElementById('detectLocationBtn');
+    if (!btn) {
+        console.error('Detect location button not found');
+        return;
+    }
+    
     btn.disabled = true;
     btn.textContent = '🎯 Detecting...';
+    console.log('Requesting location...');
     
     navigator.geolocation.getCurrentPosition(
         async (position) => {
+            console.log('Location detected:', position.coords);
             const lat = position.coords.latitude;
             const lng = position.coords.longitude;
+            
+            if (typeof google === 'undefined' || !google.maps) {
+                alert('Google Maps is still loading. Please wait a moment and try again.');
+                btn.disabled = false;
+                btn.textContent = '🎯 Detect Location';
+                return;
+            }
+            
             await suggestNearbyPlaces(lat, lng);
             btn.disabled = false;
             btn.textContent = '🎯 Detect Location';
         },
         (error) => {
             console.error('Geolocation error:', error);
-            alert('Could not detect your location. Please enable location permissions.');
+            let message = 'Could not detect your location. ';
+            if (error.code === 1) {
+                message += 'Please enable location permissions in your browser settings.';
+            } else if (error.code === 2) {
+                message += 'Location unavailable.';
+            } else if (error.code === 3) {
+                message += 'Request timeout.';
+            }
+            alert(message);
             btn.disabled = false;
             btn.textContent = '🎯 Detect Location';
         },
-        { enableHighAccuracy: true, timeout: 10000 }
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
 }
 
@@ -592,21 +617,30 @@ function convertDMSToDD(dms, ref) {
 }
 
 async function suggestNearbyPlaces(lat, lng) {
+    console.log('Suggesting nearby places for:', lat, lng);
+    
     if (typeof google === 'undefined' || !google.maps) {
         console.log('Google Maps not loaded yet');
+        alert('Google Maps is still loading. Please wait and try again.');
         return;
     }
     
     const service = new google.maps.places.PlacesService(document.createElement('div'));
     const request = {
         location: new google.maps.LatLng(lat, lng),
-        radius: 100,
-        rankBy: google.maps.places.RankBy.DISTANCE
+        radius: 100
     };
     
+    console.log('Searching nearby places...');
+    
     service.nearbySearch(request, (results, status) => {
-        if (status === google.maps.places.PlacesServiceStatus.OK && results.length > 0) {
+        console.log('Places search status:', status, 'Results:', results);
+        
+        if (status === google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
             showLocationSuggestions(results.slice(0, 5), lat, lng);
+        } else {
+            console.log('No nearby places found or error:', status);
+            alert('No nearby places found. Try using "Add Location" to search manually.');
         }
     });
 }
@@ -1094,6 +1128,7 @@ let selectedEntries = [];
 let entriesSortOrder = 'desc';
 let selectedDateFilter = null;
 let showBookmarkedOnly = false;
+let showNoLocationOnly = false;
 
 document.getElementById('searchInput').oninput = (e) => {
     searchQuery = e.target.value.toLowerCase();
@@ -1169,6 +1204,10 @@ function renderEntries(entries) {
     
     if (showBookmarkedOnly) {
         filteredEntries = filteredEntries.filter(entry => entry.bookmarked);
+    }
+    
+    if (showNoLocationOnly) {
+        filteredEntries = filteredEntries.filter(entry => !entry.location);
     }
     
     if (selectedDateFilter) {
@@ -1443,11 +1482,27 @@ function renderDateFilters() {
         bookmarkBtn.style.cssText = `padding:8px 16px;border:1px solid ${showBookmarkedOnly ? '#ffa500' : '#e5e5ea'};background:${showBookmarkedOnly ? '#ffa500' : 'white'};color:${showBookmarkedOnly ? 'white' : '#333'};border-radius:20px;font-size:14px;cursor:pointer;`;
         bookmarkBtn.onclick = () => {
             showBookmarkedOnly = !showBookmarkedOnly;
+            showNoLocationOnly = false;
             selectedDateFilter = null;
             renderDateFilters();
             renderEntries(entriesCache);
         };
         filtersContainer.appendChild(bookmarkBtn);
+    }
+    
+    const hasNoLocation = entriesCache.some(e => !e.location);
+    if (hasNoLocation) {
+        const noLocBtn = document.createElement('button');
+        noLocBtn.textContent = '📍 No Location';
+        noLocBtn.style.cssText = `padding:8px 16px;border:1px solid ${showNoLocationOnly ? '#ff3b30' : '#e5e5ea'};background:${showNoLocationOnly ? '#ff3b30' : 'white'};color:${showNoLocationOnly ? 'white' : '#333'};border-radius:20px;font-size:14px;cursor:pointer;`;
+        noLocBtn.onclick = () => {
+            showNoLocationOnly = !showNoLocationOnly;
+            showBookmarkedOnly = false;
+            selectedDateFilter = null;
+            renderDateFilters();
+            renderEntries(entriesCache);
+        };
+        filtersContainer.appendChild(noLocBtn);
     }
     
     const dateRanges = [
@@ -1467,6 +1522,7 @@ function renderDateFilters() {
         btn.onclick = () => {
             selectedDateFilter = selectedDateFilter === range.id ? null : range.id;
             showBookmarkedOnly = false;
+            showNoLocationOnly = false;
             renderDateFilters();
             renderEntries(entriesCache);
         };
