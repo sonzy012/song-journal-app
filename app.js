@@ -498,16 +498,136 @@ function removeLocation() {
     document.getElementById('locationPreview').innerHTML = '';
 }
 
-document.getElementById('mediaInput').onchange = (e) => {
+document.getElementById('mediaInput').onchange = async (e) => {
     const files = Array.from(e.target.files);
-    files.forEach(file => {
+    for (const file of files) {
         if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
             mediaFiles.push(file);
             addMediaPreview(file);
+            
+            if (file.type.startsWith('image/') && !selectedLocation) {
+                await extractLocationFromPhoto(file);
+            }
         }
-    });
+    }
     e.target.value = '';
 };
+
+async function extractLocationFromPhoto(file) {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const img = new Image();
+            img.onload = async () => {
+                EXIF.getData(img, async function() {
+                    const lat = EXIF.getTag(this, 'GPSLatitude');
+                    const lon = EXIF.getTag(this, 'GPSLongitude');
+                    const latRef = EXIF.getTag(this, 'GPSLatitudeRef');
+                    const lonRef = EXIF.getTag(this, 'GPSLongitudeRef');
+                    
+                    if (lat && lon) {
+                        const latitude = convertDMSToDD(lat, latRef);
+                        const longitude = convertDMSToDD(lon, lonRef);
+                        await suggestNearbyPlaces(latitude, longitude);
+                    }
+                    resolve();
+                });
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
+function convertDMSToDD(dms, ref) {
+    const degrees = dms[0];
+    const minutes = dms[1];
+    const seconds = dms[2];
+    let dd = degrees + minutes / 60 + seconds / 3600;
+    if (ref === 'S' || ref === 'W') dd = dd * -1;
+    return dd;
+}
+
+async function suggestNearbyPlaces(lat, lng) {
+    if (typeof google === 'undefined' || !google.maps) {
+        console.log('Google Maps not loaded yet');
+        return;
+    }
+    
+    const service = new google.maps.places.PlacesService(document.createElement('div'));
+    const request = {
+        location: new google.maps.LatLng(lat, lng),
+        radius: 100,
+        rankBy: google.maps.places.RankBy.DISTANCE
+    };
+    
+    service.nearbySearch(request, (results, status) => {
+        if (status === google.maps.places.PlacesServiceStatus.OK && results.length > 0) {
+            showLocationSuggestions(results.slice(0, 5), lat, lng);
+        }
+    });
+}
+
+function showLocationSuggestions(places, lat, lng) {
+    const modal = document.createElement('div');
+    modal.className = 'modal active';
+    modal.style.zIndex = '1001';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:500px;max-height:70vh;overflow-y:auto;">
+            <div class="modal-header">
+                <button class="btn-text" onclick="this.closest('.modal').remove()">Skip</button>
+                <h3 style="margin:0;">Detected Location</h3>
+                <div style="width:60px;"></div>
+            </div>
+            <div style="padding:16px;">
+                <p style="color:#666;font-size:14px;margin-bottom:16px;">Select a location from nearby places:</p>
+                <div id="locationSuggestionsList"></div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    const list = modal.querySelector('#locationSuggestionsList');
+    places.forEach(place => {
+        const item = document.createElement('div');
+        item.style.cssText = 'padding:12px;background:#f8f8f8;border-radius:8px;margin-bottom:8px;cursor:pointer;transition:background 0.2s;';
+        item.innerHTML = `
+            <div style="font-weight:600;margin-bottom:4px;">${place.name}</div>
+            <div style="color:#666;font-size:13px;">${place.vicinity || ''}</div>
+        `;
+        item.onmouseover = () => item.style.background = '#e5e5ea';
+        item.onmouseout = () => item.style.background = '#f8f8f8';
+        item.onclick = () => {
+            selectSuggestedPlace(place, lat, lng);
+            modal.remove();
+        };
+        list.appendChild(item);
+    });
+    
+    modal.onclick = (e) => {
+        if (e.target === modal) modal.remove();
+    };
+}
+
+function selectSuggestedPlace(place, lat, lng) {
+    const autoTags = getLocationTags(place.types || [], place.name || '');
+    
+    selectedLocation = {
+        name: place.name,
+        address: place.vicinity || '',
+        lat: lat,
+        lng: lng,
+        placeId: place.place_id,
+        types: place.types || [],
+        autoTags: autoTags
+    };
+    
+    if (place.photos && place.photos.length > 0) {
+        selectedLocation.photo = place.photos[0].getUrl({ maxWidth: 1200, maxHeight: 800 });
+    }
+    
+    updateLocationPreview();
+}
 
 const editorContent = document.getElementById('entryContent');
 if (editorContent) {
