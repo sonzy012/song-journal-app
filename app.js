@@ -27,10 +27,12 @@ function gisLoaded() {
             }
             if (response.access_token) {
                 accessToken = response.access_token;
+                const expiry = Date.now() + 3600000;
                 localStorage.setItem('accessToken', accessToken);
-                localStorage.setItem('tokenExpiry', Date.now() + 3600000);
+                localStorage.setItem('tokenExpiry', expiry);
                 localStorage.setItem('grantedScopes', response.scope || SCOPES);
                 onSignIn();
+                scheduleTokenRefresh(expiry);
             }
         },
     });
@@ -48,8 +50,20 @@ function checkStoredToken() {
     if (storedToken && expiry && Date.now() < expiry && hasAllScopes) {
         accessToken = storedToken;
         onSignIn();
+        scheduleTokenRefresh(expiry);
     } else if (storedToken && !hasAllScopes) {
         localStorage.clear();
+    }
+}
+
+function scheduleTokenRefresh(expiry) {
+    const timeUntilExpiry = expiry - Date.now();
+    const refreshTime = timeUntilExpiry - 5 * 60 * 1000;
+    
+    if (refreshTime > 0) {
+        setTimeout(() => {
+            tokenClient.requestAccessToken({ prompt: '' });
+        }, refreshTime);
     }
 }
 
@@ -138,6 +152,91 @@ window.removeTag = function(index) {
     updateTagsPreview();
 };
 
+function getLocationTags(types, name) {
+    const tags = [];
+    const nameLower = name.toLowerCase();
+    
+    const typeMapping = {
+        'restaurant': 'restaurant',
+        'cafe': 'cafe',
+        'bar': 'bar',
+        'chinese_restaurant': 'chinese',
+        'japanese_restaurant': 'japanese',
+        'italian_restaurant': 'italian',
+        'mexican_restaurant': 'mexican',
+        'korean_restaurant': 'korean',
+        'indian_restaurant': 'indian',
+        'thai_restaurant': 'thai',
+        'vietnamese_restaurant': 'vietnamese',
+        'supermarket': 'supermarket',
+        'grocery_or_supermarket': 'supermarket',
+        'convenience_store': 'convenience-store',
+        'shopping_mall': 'shopping',
+        'store': 'shopping',
+        'gym': 'gym',
+        'park': 'park',
+        'natural_feature': 'nature',
+        'tourist_attraction': 'attraction',
+        'point_of_interest': 'attraction',
+        'establishment': 'place',
+        'airport': 'airport',
+        'hospital': 'hospital',
+        'doctor': 'medical',
+        'dentist': 'medical',
+        'pharmacy': 'pharmacy',
+        'school': 'school',
+        'university': 'university',
+        'library': 'library',
+        'movie_theater': 'movies',
+        'museum': 'museum',
+        'art_gallery': 'art',
+        'aquarium': 'attraction',
+        'zoo': 'attraction',
+        'amusement_park': 'attraction',
+        'campground': 'camping',
+        'rv_park': 'camping',
+        'spa': 'spa',
+        'beauty_salon': 'beauty',
+        'hair_care': 'hair-salon',
+        'gas_station': 'gas-station',
+        'car_wash': 'car-wash',
+        'car_rental': 'car-rental',
+        'parking': 'parking',
+        'bank': 'bank',
+        'atm': 'atm',
+        'post_office': 'post-office',
+        'church': 'church',
+        'mosque': 'mosque',
+        'synagogue': 'synagogue',
+        'hindu_temple': 'temple',
+        'golf_course': 'golf',
+        'bowling_alley': 'bowling',
+        'stadium': 'stadium',
+        'night_club': 'nightlife',
+        'lodging': 'hotel',
+        'hotel': 'hotel',
+        'beach': 'beach',
+        'lake': 'nature',
+        'mountain': 'nature',
+        'hiking_area': 'hiking',
+        'trail': 'hiking'
+    };
+    
+    types.forEach(type => {
+        if (typeMapping[type]) {
+            tags.push(typeMapping[type]);
+        }
+    });
+    
+    if (nameLower.includes('golf')) tags.push('golf');
+    if (nameLower.includes('starbucks') || nameLower.includes('coffee')) tags.push('coffee');
+    if (nameLower.includes('mount') || nameLower.includes('hill') || nameLower.includes('summit')) tags.push('nature');
+    if (nameLower.includes('beach')) tags.push('beach');
+    if (nameLower.includes('trail') || nameLower.includes('hike')) tags.push('hiking');
+    
+    return [...new Set(tags)];
+}
+
 function generateAutoTags(title, content, location) {
     const tags = [];
     const text = (title + ' ' + content).toLowerCase();
@@ -161,6 +260,9 @@ function generateAutoTags(title, content, location) {
     }
     
     if (location) {
+        if (location.autoTags) {
+            tags.push(...location.autoTags);
+        }
         const locText = (location.name + ' ' + location.address).toLowerCase();
         if (locText.includes('restaurant') || locText.includes('cafe')) tags.push('food');
         if (locText.includes('park') || locText.includes('beach')) tags.push('nature');
@@ -265,13 +367,17 @@ function initMap() {
                     photoUrl = place.photos[0].getUrl({ maxWidth: 1200, maxHeight: 800 });
                 }
                 
+                const autoTags = getLocationTags(place.types || [], place.name || '');
+                
                 selectedLocation = {
                     name: place.name || 'Selected Location',
                     address: place.formatted_address || '',
                     lat: place.geometry.location.lat(),
                     lng: place.geometry.location.lng(),
                     photo: photoUrl,
-                    placeId: place.place_id
+                    placeId: place.place_id,
+                    types: place.types || [],
+                    autoTags: autoTags
                 };
             }
         });
@@ -932,7 +1038,7 @@ document.getElementById('calendarTab').onclick = () => {
     renderCalendar();
 };
 
-document.getElementById('locationsTab')?.addEventListener('click', () => {
+document.getElementById('locationsTab')?.addEventListener('click', async () => {
     document.getElementById('locationsTab').classList.add('active');
     document.getElementById('timelineTab').classList.remove('active');
     document.getElementById('calendarTab').classList.remove('active');
@@ -941,7 +1047,11 @@ document.getElementById('locationsTab')?.addEventListener('click', () => {
     document.getElementById('calendarView').style.display = 'none';
     document.getElementById('locationsView').style.display = 'block';
     document.getElementById('eventsView').style.display = 'none';
-    loadSavedLocations();
+    await loadSavedLocations();
+    if (entriesCache.length === 0) {
+        await loadEntries();
+    }
+    renderSavedLocations();
 });
 
 document.getElementById('eventsTab')?.addEventListener('click', () => {
@@ -1420,28 +1530,209 @@ function renderSavedLocations() {
     
     if (savedLocations.length === 0) {
         list.innerHTML = '<p style="text-align:center;color:#8e8e93;padding:40px;">No saved locations yet. Tap + to add your favorite places.</p>';
+    } else {
+        list.innerHTML = '';
+        savedLocations.forEach(location => {
+            const card = document.createElement('div');
+            card.className = 'entry-card';
+            card.style.cursor = 'default';
+            
+            const hasPhoto = location.photo && location.photo.startsWith('http');
+            const imageUrl = hasPhoto ? location.photo : `https://maps.googleapis.com/maps/api/staticmap?center=${location.lat},${location.lng}&zoom=14&size=300x300&markers=color:red%7C${location.lat},${location.lng}&key=${CONFIG.MAPS_API_KEY}`;
+            
+            card.innerHTML = `
+                <div class="entry-title">${location.name}</div>
+                <div style="color:#666;font-size:14px;margin:8px 0;">${location.address}</div>
+                <img src="${imageUrl}" alt="${location.name}" loading="lazy" style="width:100%;max-width:300px;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#f0f0f0;margin:8px 0;">
+                <div class="entry-actions">
+                    <button class="btn-delete" onclick="deleteSavedLocation('${location.id}')">Delete</button>
+                </div>
+            `;
+            list.appendChild(card);
+        });
+    }
+    
+    renderLocationHistory(selectedLocationCategory);
+}
+
+let selectedLocationCategory = 'all';
+
+function renderLocationHistory(filterCategory = 'all') {
+    const list = document.getElementById('locationHistoryList');
+    const filterContainer = document.getElementById('locationCategoryFilter');
+    if (!list) return;
+    
+    const locationMap = {};
+    const allCategories = new Set();
+    
+    entriesCache.forEach(entry => {
+        if (entry.location) {
+            const key = entry.location.placeId || `${entry.location.lat},${entry.location.lng}`;
+            if (!locationMap[key]) {
+                locationMap[key] = {
+                    location: entry.location,
+                    dates: [],
+                    entries: []
+                };
+            }
+            locationMap[key].dates.push(entry.date);
+            locationMap[key].entries.push(entry);
+            
+            if (entry.location.autoTags) {
+                entry.location.autoTags.forEach(tag => allCategories.add(tag));
+            }
+        }
+    });
+    
+    const locations = Object.values(locationMap).sort((a, b) => 
+        new Date(b.dates[b.dates.length - 1]) - new Date(a.dates[a.dates.length - 1])
+    );
+    
+    if (filterContainer && allCategories.size > 0) {
+        filterContainer.innerHTML = '';
+        
+        const allBtn = document.createElement('button');
+        allBtn.textContent = `All (${locations.length})`;
+        allBtn.style.cssText = `padding:8px 16px;border:1px solid ${filterCategory === 'all' ? '#007aff' : '#e5e5ea'};background:${filterCategory === 'all' ? '#007aff' : 'white'};color:${filterCategory === 'all' ? 'white' : '#333'};border-radius:20px;font-size:14px;cursor:pointer;`;
+        allBtn.onclick = () => {
+            selectedLocationCategory = 'all';
+            renderLocationHistory('all');
+        };
+        filterContainer.appendChild(allBtn);
+        
+        const categoryGroups = {
+            'Food & Drink': ['restaurant', 'cafe', 'bar', 'chinese', 'japanese', 'italian', 'mexican', 'korean', 'indian', 'thai', 'vietnamese', 'coffee'],
+            'Shopping': ['supermarket', 'shopping', 'convenience-store'],
+            'Health & Wellness': ['gym', 'spa', 'beauty', 'hair-salon', 'hospital', 'medical', 'pharmacy'],
+            'Entertainment': ['movies', 'museum', 'art', 'bowling', 'stadium', 'nightlife'],
+            'Attractions': ['attraction', 'zoo', 'aquarium'],
+            'Nature & Outdoors': ['park', 'nature', 'beach', 'hiking', 'camping'],
+            'Travel & Transport': ['airport', 'hotel', 'gas-station', 'car-rental', 'parking'],
+            'Sports': ['golf', 'stadium'],
+            'Services': ['bank', 'atm', 'post-office', 'car-wash'],
+            'Education': ['school', 'university', 'library'],
+            'Places of Worship': ['church', 'mosque', 'synagogue', 'temple']
+        };
+        
+        Object.entries(categoryGroups).forEach(([groupName, tags]) => {
+            const count = locations.filter(loc => 
+                loc.location.autoTags && loc.location.autoTags.some(tag => tags.includes(tag))
+            ).length;
+            
+            if (count > 0) {
+                const btn = document.createElement('button');
+                btn.textContent = `${groupName} (${count})`;
+                btn.style.cssText = `padding:8px 16px;border:1px solid ${filterCategory === groupName ? '#007aff' : '#e5e5ea'};background:${filterCategory === groupName ? '#007aff' : 'white'};color:${filterCategory === groupName ? 'white' : '#333'};border-radius:20px;font-size:14px;cursor:pointer;`;
+                btn.onclick = () => {
+                    selectedLocationCategory = groupName;
+                    renderLocationHistory(groupName);
+                };
+                filterContainer.appendChild(btn);
+            }
+        });
+    }
+    
+    if (locations.length === 0) {
+        list.innerHTML = '<p style="text-align:center;color:#8e8e93;padding:40px;">No location history yet. Add locations to your entries to see them here.</p>';
+        return;
+    }
+    
+    const filteredLocations = filterCategory === 'all' ? locations : locations.filter(item => {
+        if (!item.location.autoTags) return false;
+        const categoryGroups = {
+            'Food & Drink': ['restaurant', 'cafe', 'bar', 'chinese', 'japanese', 'italian', 'mexican', 'korean', 'indian', 'thai', 'vietnamese', 'coffee'],
+            'Shopping': ['supermarket', 'shopping', 'convenience-store'],
+            'Health & Wellness': ['gym', 'spa', 'beauty', 'hair-salon', 'hospital', 'medical', 'pharmacy'],
+            'Entertainment': ['movies', 'museum', 'art', 'bowling', 'stadium', 'nightlife'],
+            'Attractions': ['attraction', 'zoo', 'aquarium'],
+            'Nature & Outdoors': ['park', 'nature', 'beach', 'hiking', 'camping'],
+            'Travel & Transport': ['airport', 'hotel', 'gas-station', 'car-rental', 'parking'],
+            'Sports': ['golf', 'stadium'],
+            'Services': ['bank', 'atm', 'post-office', 'car-wash'],
+            'Education': ['school', 'university', 'library'],
+            'Places of Worship': ['church', 'mosque', 'synagogue', 'temple']
+        };
+        const tags = categoryGroups[filterCategory] || [];
+        return item.location.autoTags.some(tag => tags.includes(tag));
+    });
+    
+    if (filteredLocations.length === 0) {
+        list.innerHTML = '<p style="text-align:center;color:#8e8e93;padding:40px;">No locations in this category.</p>';
         return;
     }
     
     list.innerHTML = '';
-    savedLocations.forEach(location => {
+    filteredLocations.forEach(item => {
         const card = document.createElement('div');
         card.className = 'entry-card';
-        card.style.cursor = 'default';
+        card.style.cursor = 'pointer';
         
-        const hasPhoto = location.photo && location.photo.startsWith('http');
-        const imageUrl = hasPhoto ? location.photo : `https://maps.googleapis.com/maps/api/staticmap?center=${location.lat},${location.lng}&zoom=14&size=300x300&markers=color:red%7C${location.lat},${location.lng}&key=${CONFIG.MAPS_API_KEY}`;
+        const hasPhoto = item.location.photo && item.location.photo.startsWith('http');
+        const imageUrl = hasPhoto ? item.location.photo : `https://maps.googleapis.com/maps/api/staticmap?center=${item.location.lat},${item.location.lng}&zoom=14&size=300x300&markers=color:red%7C${item.location.lat},${item.location.lng}&key=${CONFIG.MAPS_API_KEY}`;
+        
+        const visitCount = item.dates.length;
+        const lastVisit = new Date(item.dates[item.dates.length - 1]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        
+        let tagsHtml = '';
+        if (item.location.autoTags && item.location.autoTags.length > 0) {
+            tagsHtml = '<div class="entry-tags">';
+            item.location.autoTags.forEach(tag => {
+                tagsHtml += `<span class="entry-tag">${tag}</span>`;
+            });
+            tagsHtml += '</div>';
+        }
         
         card.innerHTML = `
-            <div class="entry-title">${location.name}</div>
-            <div style="color:#666;font-size:14px;margin:8px 0;">${location.address}</div>
-            <img src="${imageUrl}" alt="${location.name}" loading="lazy" style="width:100%;max-width:300px;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#f0f0f0;margin:8px 0;">
-            <div class="entry-actions">
-                <button class="btn-delete" onclick="deleteSavedLocation('${location.id}')">Delete</button>
-            </div>
+            <div class="entry-title">${item.location.name}</div>
+            <div style="color:#666;font-size:14px;margin:8px 0;">${item.location.address}</div>
+            ${tagsHtml}
+            <img src="${imageUrl}" alt="${item.location.name}" loading="lazy" style="width:100%;max-width:300px;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#f0f0f0;margin:8px 0;">
+            <div style="color:#8e8e93;font-size:13px;margin:8px 0;">📍 Visited ${visitCount} time${visitCount > 1 ? 's' : ''} • Last: ${lastVisit}</div>
         `;
+        
+        card.onclick = () => {
+            showLocationEntries(item.location.name, item.entries);
+        };
+        
         list.appendChild(card);
     });
+}
+
+function showLocationEntries(locationName, entries) {
+    const modal = document.createElement('div');
+    modal.className = 'modal active';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width:600px;max-height:80vh;overflow-y:auto;">
+            <div class="modal-header">
+                <button class="btn-text" onclick="this.closest('.modal').remove()">Close</button>
+                <h3 style="margin:0;">${locationName}</h3>
+                <div style="width:60px;"></div>
+            </div>
+            <div id="locationEntriesContent" style="padding:16px;"></div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    const content = modal.querySelector('#locationEntriesContent');
+    entries.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).forEach(entry => {
+        const date = new Date(entry.timestamp).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+        const entryDiv = document.createElement('div');
+        entryDiv.style.cssText = 'padding:16px;background:#f8f8f8;border-radius:8px;margin-bottom:12px;cursor:pointer;';
+        entryDiv.innerHTML = `
+            <div style="font-weight:600;margin-bottom:4px;">${entry.title}</div>
+            <div style="color:#666;font-size:13px;margin-bottom:8px;">${date}</div>
+            <div style="color:#333;font-size:14px;">${entry.content.substring(0, 150)}${entry.content.length > 150 ? '...' : ''}</div>
+        `;
+        entryDiv.onclick = () => {
+            modal.remove();
+            viewDateInCalendar(entry.date);
+        };
+        content.appendChild(entryDiv);
+    });
+    
+    modal.onclick = (e) => {
+        if (e.target === modal) modal.remove();
+    };
 }
 
 window.deleteSavedLocation = deleteSavedLocation;

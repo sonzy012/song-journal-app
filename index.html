@@ -58,10 +58,16 @@
         </div>
 
         <div id="locationsView" class="locations-container" style="display:none;">
-            <div style="padding:20px;">
+            <div style="padding:20px;border-bottom:1px solid #e5e5ea;">
+                <h2 style="margin:0 0 10px 0;font-size:18px;">Saved Locations</h2>
                 <button id="addSavedLocationBtn" class="btn-new">+ Add Location</button>
             </div>
             <div id="savedLocationsList" class="saved-locations-list"></div>
+            <div style="padding:20px;border-top:1px solid #e5e5ea;margin-top:20px;">
+                <h2 style="margin:0 0 10px 0;font-size:18px;">Location History</h2>
+                <div id="locationCategoryFilter" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;"></div>
+            </div>
+            <div id="locationHistoryList" class="location-history-list"></div>
         </div>
 
         <div id="eventsView" class="events-container" style="display:none;">
