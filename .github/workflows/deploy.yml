@@ -10,17 +10,19 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       
-      - name: Create config.js
+      - name: Prepare deployment
         run: |
-          echo "const CONFIG = {" > config.js
-          echo "  CLIENT_ID: '${{ secrets.CLIENT_ID }}'," >> config.js
-          echo "  MAPS_API_KEY: '${{ secrets.MAPS_API_KEY }}'" >> config.js
-          echo "};" >> config.js
+          mkdir deploy
+          cp *.html *.css *.js *.json deploy/ 2>/dev/null || true
+          echo "const CONFIG = {" > deploy/config.js
+          echo "  CLIENT_ID: '${{ secrets.CLIENT_ID }}'," >> deploy/config.js
+          echo "  MAPS_API_KEY: '${{ secrets.MAPS_API_KEY }}'" >> deploy/config.js
+          echo "};" >> deploy/config.js
+          ls -la deploy/
       
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: .
+          publish_dir: ./deploy
           force_orphan: true
-          enable_jekyll: false
