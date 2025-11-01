@@ -44,6 +44,14 @@
         </div>
 
         <div id="timelineView" class="timeline">
+            <div style="padding:20px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e5e5ea;">
+                <div id="dateFilters" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+                <select id="sortEntriesSelect" style="padding:10px;border:1px solid #e5e5ea;border-radius:8px;font-size:15px;margin-left:auto;">
+                    <option value="desc">Newest First</option>
+                    <option value="asc">Oldest First</option>
+                </select>
+            </div>
+            <div id="tagFilters" class="tag-filters" style="padding:0 20px 20px 20px;display:flex;gap:8px;flex-wrap:wrap;"></div>
             <div id="entriesList"></div>
         </div>
 
@@ -56,6 +64,8 @@
             <div id="calendar" class="calendar-grid"></div>
             <div id="dayEntries" class="day-entries"></div>
         </div>
+
+
 
         <div id="locationsView" class="locations-container" style="display:none;">
             <div style="padding:20px;border-bottom:1px solid #e5e5ea;">
@@ -93,9 +103,16 @@
                     <button id="saveBtn" class="btn-save">Save</button>
                 </div>
                 <input type="text" id="entryTitle" placeholder="Title (optional)" class="editor-title">
+                <input type="date" id="entryDate" class="editor-date" style="width:100%;padding:12px;border:1px solid #e5e5ea;border-radius:8px;margin-bottom:12px;font-size:15px;">
                 <textarea id="entryContent" placeholder="What's on your mind? (optional)" class="editor-content"></textarea>
                 <div class="tags-section">
-                    <input type="text" id="tagInput" placeholder="Add tags (press Enter)" class="tag-input">
+                    <div style="display:flex;gap:8px;position:relative;">
+                        <div style="flex:1;position:relative;">
+                            <input type="text" id="tagInput" placeholder="Add tags" class="tag-input" onkeydown="handleTagInput(event)" oninput="showTagSuggestions()" onfocus="showTagSuggestions()" style="width:100%;">
+                            <div id="tagSuggestions" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #e5e5ea;border-radius:8px;margin-top:4px;max-height:200px;overflow-y:auto;z-index:1000;box-shadow:0 2px 8px rgba(0,0,0,0.1);"></div>
+                        </div>
+                        <button type="button" onclick="addTagFromInput()" class="btn-text" style="padding:8px 16px;">Add Tag</button>
+                    </div>
                     <div id="tagsPreview" class="tags-preview"></div>
                 </div>
                 <div class="media-toolbar">

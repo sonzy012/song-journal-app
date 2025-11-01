@@ -87,6 +87,8 @@ document.getElementById('newEntryBtn').onclick = () => {
     const modal = document.getElementById('editorModal');
     if (modal) {
         modal.classList.add('active');
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('entryDate').value = today;
         document.getElementById('entryTitle')?.focus();
     }
 };
@@ -106,6 +108,7 @@ let eventsSortOrder = 'desc';
 document.getElementById('cancelBtn').onclick = () => {
     document.getElementById('editorModal').classList.remove('active');
     document.getElementById('entryTitle').value = '';
+    document.getElementById('entryDate').value = '';
     document.getElementById('entryContent').value = '';
     document.getElementById('mediaPreview').innerHTML = '';
     document.getElementById('locationPreview').innerHTML = '';
@@ -121,17 +124,99 @@ document.getElementById('cancelBtn').onclick = () => {
     }
 };
 
-document.getElementById('tagInput').onkeydown = (e) => {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        const tag = e.target.value.trim().toLowerCase();
-        if (tag && !entryTags.includes(tag)) {
-            entryTags.push(tag);
-            updateTagsPreview();
-            e.target.value = '';
-        }
+window.addTagFromInput = function() {
+    const input = document.getElementById('tagInput');
+    const tag = input.value.trim().toLowerCase();
+    console.log('Adding tag:', tag);
+    if (tag && !entryTags.includes(tag)) {
+        entryTags.push(tag);
+        console.log('Added tag:', tag, 'All tags:', entryTags);
+        updateTagsPreview();
+        input.value = '';
+        saveRecentTag(tag);
+        document.getElementById('tagSuggestions').style.display = 'none';
+    } else if (tag) {
+        console.log('Tag already exists:', tag);
     }
 };
+
+function saveRecentTag(tag) {
+    let recentTags = JSON.parse(localStorage.getItem('recentTags') || '[]');
+    recentTags = recentTags.filter(t => t !== tag);
+    recentTags.unshift(tag);
+    recentTags = recentTags.slice(0, 10);
+    localStorage.setItem('recentTags', JSON.stringify(recentTags));
+}
+
+function getAllTagsWithFrequency() {
+    const tagFreq = {};
+    entriesCache.forEach(entry => {
+        if (entry.tags) {
+            entry.tags.forEach(tag => {
+                tagFreq[tag] = (tagFreq[tag] || 0) + 1;
+            });
+        }
+    });
+    return Object.entries(tagFreq).sort((a, b) => b[1] - a[1]).map(([tag]) => tag);
+}
+
+window.showTagSuggestions = function() {
+    const input = document.getElementById('tagInput');
+    const suggestions = document.getElementById('tagSuggestions');
+    const query = input.value.toLowerCase();
+    
+    const recentTags = JSON.parse(localStorage.getItem('recentTags') || '[]');
+    const frequentTags = getAllTagsWithFrequency().slice(0, 10);
+    const allTags = [...new Set([...recentTags, ...frequentTags])];
+    
+    const filtered = allTags.filter(tag => 
+        !entryTags.includes(tag) && tag.includes(query)
+    );
+    
+    if (filtered.length === 0) {
+        suggestions.style.display = 'none';
+        return;
+    }
+    
+    suggestions.innerHTML = '';
+    filtered.slice(0, 8).forEach(tag => {
+        const div = document.createElement('div');
+        div.textContent = tag;
+        div.style.cssText = 'padding:10px 12px;cursor:pointer;border-bottom:1px solid #f0f0f0;';
+        div.onmouseover = () => div.style.background = '#f8f8f8';
+        div.onmouseout = () => div.style.background = 'white';
+        div.onclick = () => {
+            entryTags.push(tag);
+            updateTagsPreview();
+            input.value = '';
+            suggestions.style.display = 'none';
+            saveRecentTag(tag);
+        };
+        suggestions.appendChild(div);
+    });
+    
+    suggestions.style.display = 'block';
+};
+
+document.addEventListener('click', (e) => {
+    const suggestions = document.getElementById('tagSuggestions');
+    const input = document.getElementById('tagInput');
+    if (suggestions && input && e.target !== input && !suggestions.contains(e.target)) {
+        suggestions.style.display = 'none';
+    }
+});
+
+window.handleTagInput = function(e) {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        addTagFromInput();
+    }
+};
+
+const tagInput = document.getElementById('tagInput');
+if (tagInput) {
+    tagInput.onkeydown = window.handleTagInput;
+}
 
 function updateTagsPreview() {
     const preview = document.getElementById('tagsPreview');
@@ -426,6 +511,25 @@ document.getElementById('mediaInput').onchange = (e) => {
     e.target.value = '';
 };
 
+const editorContent = document.getElementById('entryContent');
+if (editorContent) {
+    editorContent.addEventListener('paste', (e) => {
+        const items = e.clipboardData?.items;
+        if (!items) return;
+        
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf('image') !== -1) {
+                e.preventDefault();
+                const file = items[i].getAsFile();
+                if (file) {
+                    mediaFiles.push(file);
+                    addMediaPreview(file);
+                }
+            }
+        }
+    });
+}
+
 function addMediaPreview(file) {
     const preview = document.getElementById('mediaPreview');
     const item = document.createElement('div');
@@ -506,6 +610,25 @@ document.getElementById('editorModal').onclick = (e) => {
         document.getElementById('cancelBtn').click();
     }
 };
+
+document.addEventListener('paste', (e) => {
+    const modal = document.getElementById('editorModal');
+    if (!modal.classList.contains('active')) return;
+    
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    
+    for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf('image') !== -1) {
+            e.preventDefault();
+            const file = items[i].getAsFile();
+            if (file) {
+                mediaFiles.push(file);
+                addMediaPreview(file);
+            }
+        }
+    }
+});
 
 async function onSignIn() {
     document.getElementById('signInScreen').style.display = 'none';
@@ -589,7 +712,8 @@ document.getElementById('saveBtn').onclick = async () => {
     saveBtn.innerHTML = '<span class="spinner"></span> Saving...';
 
     try {
-        const now = selectedDate ? new Date(selectedDate + 'T12:00:00') : new Date();
+        const dateInput = document.getElementById('entryDate').value;
+        const now = dateInput ? new Date(dateInput + 'T12:00:00') : (selectedDate ? new Date(selectedDate + 'T12:00:00') : new Date());
         const year = now.getFullYear();
         const month = String(now.getMonth() + 1).padStart(2, '0');
         const monthName = now.toLocaleString('en-US', { month: 'long' });
@@ -632,6 +756,7 @@ document.getElementById('saveBtn').onclick = async () => {
 
         const autoTags = generateAutoTags(title, content, selectedLocation);
         const allTags = [...new Set([...entryTags, ...autoTags])];
+        console.log('Saving entry with tags:', { entryTags, autoTags, allTags });
         
         const entry = {
             title: title || 'Untitled',
@@ -677,6 +802,7 @@ document.getElementById('saveBtn').onclick = async () => {
         }
 
         document.getElementById('entryTitle').value = '';
+        document.getElementById('entryDate').value = '';
         document.getElementById('entryContent').value = '';
         document.getElementById('mediaPreview').innerHTML = '';
         document.getElementById('locationPreview').innerHTML = '';
@@ -727,6 +853,16 @@ async function loadEntries(forceRefresh = false) {
         renderEntries(entriesCache);
         isLoading = false;
         return;
+    }
+    
+    const cachedData = localStorage.getItem('entriesCache');
+    if (cachedData && !forceRefresh) {
+        try {
+            entriesCache = JSON.parse(cachedData);
+            renderEntries(entriesCache);
+        } catch (e) {
+            console.error('Cache parse error:', e);
+        }
     }
 
     try {
@@ -779,6 +915,12 @@ async function loadEntries(forceRefresh = false) {
         );
 
         entriesCache = entries;
+        try {
+            localStorage.setItem('entriesCache', JSON.stringify(entries));
+            localStorage.setItem('entriesCacheTime', Date.now().toString());
+        } catch (e) {
+            console.error('Cache save error:', e);
+        }
         renderEntries(entries);
     } catch (error) {
         console.error('Error loading entries:', error);
@@ -791,6 +933,8 @@ async function loadEntries(forceRefresh = false) {
 let searchQuery = '';
 let selectionMode = false;
 let selectedEntries = [];
+let entriesSortOrder = 'desc';
+let selectedDateFilter = null;
 
 document.getElementById('searchInput').oninput = (e) => {
     searchQuery = e.target.value.toLowerCase();
@@ -859,9 +1003,60 @@ function renderEntries(entries) {
     const entriesList = document.getElementById('entriesList');
     entriesList.innerHTML = '';
     
+    renderDateFilters();
+    renderTagFilters();
+    
     let filteredEntries = entries;
+    
+    if (selectedDateFilter) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayMM = String(today.getMonth() + 1).padStart(2, '0');
+        const todayDD = String(today.getDate()).padStart(2, '0');
+        
+        filteredEntries = filteredEntries.filter(entry => {
+            const entryDate = new Date(entry.timestamp);
+            entryDate.setHours(0, 0, 0, 0);
+            
+            if (selectedDateFilter === 'today') {
+                return entryDate.getTime() === today.getTime();
+            } else if (selectedDateFilter === 'thisWeek') {
+                const dayOfWeek = today.getDay();
+                const weekStart = new Date(today);
+                weekStart.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+                return entryDate >= weekStart && entryDate <= today;
+            } else if (selectedDateFilter === 'lastWeek') {
+                const dayOfWeek = today.getDay();
+                const lastWeekStart = new Date(today);
+                lastWeekStart.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1) - 7);
+                const lastWeekEnd = new Date(lastWeekStart);
+                lastWeekEnd.setDate(lastWeekStart.getDate() + 6);
+                return entryDate >= lastWeekStart && entryDate <= lastWeekEnd;
+            } else if (selectedDateFilter === 'thisMonth') {
+                return entryDate.getMonth() === today.getMonth() && entryDate.getFullYear() === today.getFullYear();
+            } else if (selectedDateFilter === 'past3Months') {
+                const threeMonthsAgo = new Date(today);
+                threeMonthsAgo.setMonth(today.getMonth() - 3);
+                return entryDate >= threeMonthsAgo && entryDate <= today;
+            } else if (selectedDateFilter === 'onThisDay') {
+                const entryMM = String(entryDate.getMonth() + 1).padStart(2, '0');
+                const entryDD = String(entryDate.getDate()).padStart(2, '0');
+                return entryMM === todayMM && entryDD === todayDD;
+            }
+            return true;
+        });
+    }
+    
+    if (selectedTagFilters.length > 0) {
+        filteredEntries = filteredEntries.filter(entry => {
+            const hasUntagged = selectedTagFilters.includes('__untagged__') && (!entry.tags || entry.tags.length === 0);
+            const hasMatchingTag = entry.tags && entry.tags.some(tag => selectedTagFilters.includes(tag));
+            return hasUntagged || hasMatchingTag;
+        });
+    }
+    
     if (searchQuery) {
-        filteredEntries = entries.filter(entry => {
+        filteredEntries = filteredEntries.filter(entry => {
             const titleMatch = entry.title.toLowerCase().includes(searchQuery);
             const contentMatch = entry.content.toLowerCase().includes(searchQuery);
             const tagMatch = entry.tags && entry.tags.some(tag => tag.includes(searchQuery));
@@ -871,6 +1066,12 @@ function renderEntries(entries) {
             return titleMatch || contentMatch || tagMatch || locationMatch;
         });
     }
+    
+    filteredEntries.sort((a, b) => {
+        const dateA = new Date(a.timestamp);
+        const dateB = new Date(b.timestamp);
+        return entriesSortOrder === 'desc' ? dateB - dateA : dateA - dateB;
+    });
 
     for (const entry of filteredEntries) {
         const entryDiv = document.createElement('div');
@@ -884,10 +1085,10 @@ function renderEntries(entries) {
         if (entry.location) {
             const mapLink = encodeURIComponent(entry.location.name || entry.location.address);
             const hasPhoto = entry.location.photo && entry.location.photo.startsWith('http');
-            const imageUrl = hasPhoto ? entry.location.photo : `https://maps.googleapis.com/maps/api/staticmap?center=${entry.location.lat},${entry.location.lng}&zoom=14&size=300x300&markers=color:red%7C${entry.location.lat},${entry.location.lng}&key=${CONFIG.MAPS_API_KEY}`;
+            const imageUrl = hasPhoto ? entry.location.photo : `https://maps.googleapis.com/maps/api/staticmap?center=${entry.location.lat},${entry.location.lng}&zoom=14&size=200x200&markers=color:red%7C${entry.location.lat},${entry.location.lng}&key=${CONFIG.MAPS_API_KEY}`;
             locationHtml = `
                 <div class="entry-location" onclick="window.open('https://www.google.com/maps/search/?api=1&query=${mapLink}', '_blank')" style="cursor:pointer;padding:8px;background:#f8f8f8;border-radius:8px;margin:8px 0;">
-                    <img src="${imageUrl}" alt="${entry.location.name}" loading="lazy" style="width:100%;max-width:250px;aspect-ratio:1;object-fit:cover;border-radius:6px;background:#f0f0f0;">
+                    <img src="${imageUrl}" alt="${entry.location.name}" loading="lazy" style="width:100%;max-width:150px;aspect-ratio:1;object-fit:cover;border-radius:6px;background:#f0f0f0;">
                     <div style="padding:6px 0;color:#666;font-size:13px;">📍 ${entry.location.name}</div>
                 </div>
             `;
@@ -1037,6 +1238,107 @@ document.getElementById('calendarTab').onclick = () => {
     document.getElementById('eventsView').style.display = 'none';
     renderCalendar();
 };
+
+
+
+let selectedTagFilters = [];
+
+function renderDateFilters() {
+    const filtersContainer = document.getElementById('dateFilters');
+    if (!filtersContainer) return;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const dateRanges = [
+        { id: 'today', label: 'Today' },
+        { id: 'thisWeek', label: 'This Week' },
+        { id: 'lastWeek', label: 'Last Week' },
+        { id: 'thisMonth', label: 'This Month' },
+        { id: 'past3Months', label: 'Past 3 Months' },
+        { id: 'onThisDay', label: 'On This Day' }
+    ];
+    
+    filtersContainer.innerHTML = '';
+    
+    dateRanges.forEach(range => {
+        const btn = document.createElement('button');
+        const isSelected = selectedDateFilter === range.id;
+        btn.textContent = range.label;
+        btn.style.cssText = `padding:8px 16px;border:1px solid ${isSelected ? '#007aff' : '#e5e5ea'};background:${isSelected ? '#007aff' : 'white'};color:${isSelected ? 'white' : '#333'};border-radius:20px;font-size:14px;cursor:pointer;`;
+        btn.onclick = () => {
+            selectedDateFilter = selectedDateFilter === range.id ? null : range.id;
+            renderDateFilters();
+            renderEntries(entriesCache);
+        };
+        filtersContainer.appendChild(btn);
+    });
+}
+
+function renderTagFilters() {
+    const filtersContainer = document.getElementById('tagFilters');
+    if (!filtersContainer) return;
+    
+    const tagCounts = {};
+    let untaggedCount = 0;
+    
+    entriesCache.forEach(entry => {
+        if (!entry.tags || entry.tags.length === 0) {
+            untaggedCount++;
+        } else {
+            entry.tags.forEach(tag => {
+                tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+            });
+        }
+    });
+    
+    const sortedTags = Object.keys(tagCounts).sort((a, b) => tagCounts[b] - tagCounts[a]);
+    
+    filtersContainer.innerHTML = '';
+    
+    if (sortedTags.length === 0 && untaggedCount === 0) {
+        filtersContainer.style.display = 'none';
+        return;
+    }
+    
+    filtersContainer.style.display = 'flex';
+    filtersContainer.style.paddingTop = '0';
+    filtersContainer.style.paddingBottom = '20px';
+    
+    sortedTags.forEach(tag => {
+        const btn = document.createElement('button');
+        const isSelected = selectedTagFilters.includes(tag);
+        btn.textContent = `${tag} (${tagCounts[tag]})`;
+        btn.style.cssText = `padding:8px 16px;border:1px solid ${isSelected ? '#007aff' : '#e5e5ea'};background:${isSelected ? '#007aff' : 'white'};color:${isSelected ? 'white' : '#333'};border-radius:20px;font-size:14px;cursor:pointer;`;
+        btn.onclick = () => {
+            if (selectedTagFilters.includes(tag)) {
+                selectedTagFilters = selectedTagFilters.filter(t => t !== tag);
+            } else {
+                selectedTagFilters.push(tag);
+            }
+            renderTagFilters();
+            renderEntries(entriesCache);
+        };
+        filtersContainer.appendChild(btn);
+    });
+    
+    if (untaggedCount > 0) {
+        const btn = document.createElement('button');
+        const isSelected = selectedTagFilters.includes('__untagged__');
+        btn.textContent = `No Tags (${untaggedCount})`;
+        btn.style.cssText = `padding:8px 16px;border:1px solid ${isSelected ? '#007aff' : '#e5e5ea'};background:${isSelected ? '#007aff' : 'white'};color:${isSelected ? 'white' : '#333'};border-radius:20px;font-size:14px;cursor:pointer;`;
+        btn.onclick = () => {
+            if (selectedTagFilters.includes('__untagged__')) {
+                selectedTagFilters = selectedTagFilters.filter(t => t !== '__untagged__');
+            } else {
+                selectedTagFilters.push('__untagged__');
+            }
+            renderTagFilters();
+            renderEntries(entriesCache);
+        };
+        filtersContainer.appendChild(btn);
+    }
+}
 
 document.getElementById('locationsTab')?.addEventListener('click', async () => {
     document.getElementById('locationsTab').classList.add('active');
@@ -1250,6 +1552,7 @@ function showDayEntries(dateStr, entries) {
 window.createEntryForDate = function(dateStr) {
     selectedDate = dateStr;
     document.getElementById('editorModal').classList.add('active');
+    document.getElementById('entryDate').value = dateStr;
     document.getElementById('entryTitle').focus();
 };
 
@@ -1282,6 +1585,7 @@ window.editEntry = async function(fileId) {
     selectedDate = entry.date;
     
     document.getElementById('entryTitle').value = entry.title;
+    document.getElementById('entryDate').value = entry.date;
     document.getElementById('entryContent').value = entry.content;
     
     if (entry.location) {
@@ -1413,6 +1717,14 @@ window.onload = () => {
     if (selectBtn) selectBtn.style.display = 'none';
     if (cancelSelectBtn) cancelSelectBtn.style.display = 'none';
     if (deleteSelectedBtn) deleteSelectedBtn.style.display = 'none';
+    
+    const sortSelect = document.getElementById('sortEntriesSelect');
+    if (sortSelect) {
+        sortSelect.onchange = (e) => {
+            entriesSortOrder = e.target.value;
+            renderEntries(entriesCache);
+        };
+    }
 };
 
 
