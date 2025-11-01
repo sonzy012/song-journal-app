@@ -359,9 +359,41 @@ document.getElementById('addMediaBtn').onclick = () => {
     document.getElementById('mediaInput').click();
 };
 
+document.getElementById('detectLocationBtn').onclick = () => {
+    detectCurrentLocation();
+};
+
 document.getElementById('addLocationBtn').onclick = () => {
     showLocationPicker();
 };
+
+function detectCurrentLocation() {
+    if (!navigator.geolocation) {
+        alert('Geolocation is not supported by your browser');
+        return;
+    }
+    
+    const btn = document.getElementById('detectLocationBtn');
+    btn.disabled = true;
+    btn.textContent = '🎯 Detecting...';
+    
+    navigator.geolocation.getCurrentPosition(
+        async (position) => {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            await suggestNearbyPlaces(lat, lng);
+            btn.disabled = false;
+            btn.textContent = '🎯 Detect Location';
+        },
+        (error) => {
+            console.error('Geolocation error:', error);
+            alert('Could not detect your location. Please enable location permissions.');
+            btn.disabled = false;
+            btn.textContent = '🎯 Detect Location';
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+    );
+}
 
 document.getElementById('savedLocationSelect').onchange = (e) => {
     const locationId = e.target.value;
@@ -519,16 +551,27 @@ async function extractLocationFromPhoto(file) {
         reader.onload = async (e) => {
             const img = new Image();
             img.onload = async () => {
+                if (typeof EXIF === 'undefined') {
+                    console.log('EXIF library not loaded');
+                    resolve();
+                    return;
+                }
+                
                 EXIF.getData(img, async function() {
                     const lat = EXIF.getTag(this, 'GPSLatitude');
                     const lon = EXIF.getTag(this, 'GPSLongitude');
                     const latRef = EXIF.getTag(this, 'GPSLatitudeRef');
                     const lonRef = EXIF.getTag(this, 'GPSLongitudeRef');
                     
+                    console.log('EXIF GPS data:', { lat, lon, latRef, lonRef });
+                    
                     if (lat && lon) {
                         const latitude = convertDMSToDD(lat, latRef);
                         const longitude = convertDMSToDD(lon, lonRef);
+                        console.log('Converted coordinates:', { latitude, longitude });
                         await suggestNearbyPlaces(latitude, longitude);
+                    } else {
+                        console.log('No GPS data found in photo. This photo may be from Google Photos or has no location data.');
                     }
                     resolve();
                 });
@@ -879,7 +922,8 @@ document.getElementById('saveBtn').onclick = async () => {
             date: date,
             media: [...existingMedia, ...mediaUrls],
             location: selectedLocation,
-            tags: entryTags
+            tags: entryTags,
+            bookmarked: editingEntryId ? (entriesCache.find(e => e.fileId === editingEntryId)?.bookmarked || false) : false
         };
 
         if (editingEntryId) {
@@ -1049,6 +1093,7 @@ let selectionMode = false;
 let selectedEntries = [];
 let entriesSortOrder = 'desc';
 let selectedDateFilter = null;
+let showBookmarkedOnly = false;
 
 document.getElementById('searchInput').oninput = (e) => {
     searchQuery = e.target.value.toLowerCase();
@@ -1121,6 +1166,10 @@ function renderEntries(entries) {
     renderTagFilters();
     
     let filteredEntries = entries;
+    
+    if (showBookmarkedOnly) {
+        filteredEntries = filteredEntries.filter(entry => entry.bookmarked);
+    }
     
     if (selectedDateFilter) {
         const today = new Date();
@@ -1248,6 +1297,7 @@ function renderEntries(entries) {
             ${mediaHtml}
             <div class="entry-preview">${entry.content}</div>
             <div class="entry-actions" style="${selectionMode ? 'display:none;' : ''}">
+                <button class="btn-bookmark" onclick="event.stopPropagation();toggleBookmark('${entry.fileId}')" title="${entry.bookmarked ? 'Remove bookmark' : 'Bookmark'}">${entry.bookmarked ? '⭐' : '☆'}</button>
                 <button class="btn-edit" onclick="event.stopPropagation();editEntry('${entry.fileId}')" title="Edit">✏️</button>
                 <button class="btn-delete" onclick="event.stopPropagation();deleteEntry('${entry.fileId}')" title="Delete">🗑️</button>
             </div>
@@ -1293,6 +1343,25 @@ async function deleteEntry(fileId) {
     entriesCache = [];
     await loadEntries(true);
 }
+
+window.toggleBookmark = async function(fileId) {
+    const entry = entriesCache.find(e => e.fileId === fileId);
+    if (!entry) return;
+    
+    entry.bookmarked = !entry.bookmarked;
+    
+    const blob = new Blob([JSON.stringify(entry, null, 2)], { type: 'application/json' });
+    await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`, {
+        method: 'PATCH',
+        headers: { 
+            Authorization: 'Bearer ' + accessToken,
+            'Content-Type': 'application/json'
+        },
+        body: blob,
+    });
+    
+    renderEntries(entriesCache);
+};
 
 window.openMedia = openMedia;
 
@@ -1364,6 +1433,23 @@ function renderDateFilters() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     
+    const hasBookmarked = entriesCache.some(e => e.bookmarked);
+    
+    filtersContainer.innerHTML = '';
+    
+    if (hasBookmarked) {
+        const bookmarkBtn = document.createElement('button');
+        bookmarkBtn.textContent = '⭐ Bookmarked';
+        bookmarkBtn.style.cssText = `padding:8px 16px;border:1px solid ${showBookmarkedOnly ? '#ffa500' : '#e5e5ea'};background:${showBookmarkedOnly ? '#ffa500' : 'white'};color:${showBookmarkedOnly ? 'white' : '#333'};border-radius:20px;font-size:14px;cursor:pointer;`;
+        bookmarkBtn.onclick = () => {
+            showBookmarkedOnly = !showBookmarkedOnly;
+            selectedDateFilter = null;
+            renderDateFilters();
+            renderEntries(entriesCache);
+        };
+        filtersContainer.appendChild(bookmarkBtn);
+    }
+    
     const dateRanges = [
         { id: 'today', label: 'Today' },
         { id: 'thisWeek', label: 'This Week' },
@@ -1373,8 +1459,6 @@ function renderDateFilters() {
         { id: 'onThisDay', label: 'On This Day' }
     ];
     
-    filtersContainer.innerHTML = '';
-    
     dateRanges.forEach(range => {
         const btn = document.createElement('button');
         const isSelected = selectedDateFilter === range.id;
@@ -1382,6 +1466,7 @@ function renderDateFilters() {
         btn.style.cssText = `padding:8px 16px;border:1px solid ${isSelected ? '#007aff' : '#e5e5ea'};background:${isSelected ? '#007aff' : 'white'};color:${isSelected ? 'white' : '#333'};border-radius:20px;font-size:14px;cursor:pointer;`;
         btn.onclick = () => {
             selectedDateFilter = selectedDateFilter === range.id ? null : range.id;
+            showBookmarkedOnly = false;
             renderDateFilters();
             renderEntries(entriesCache);
         };
@@ -1644,6 +1729,7 @@ function showDayEntries(dateStr, entries) {
                 ${mediaHtml}
                 <div class="entry-preview">${entry.content}</div>
                 <div class="entry-actions" style="position:relative;opacity:1;margin-top:12px;">
+                    <button class="btn-bookmark" onclick="event.stopPropagation();toggleBookmark('${entry.fileId}')" title="${entry.bookmarked ? 'Remove bookmark' : 'Bookmark'}">${entry.bookmarked ? '⭐' : '☆'}</button>
                     <button class="btn-edit" onclick="event.stopPropagation();editEntry('${entry.fileId}')" title="Edit">✏️</button>
                     <button class="btn-delete" onclick="event.stopPropagation();deleteEntry('${entry.fileId}')" title="Delete">🗑️</button>
                 </div>
@@ -1838,6 +1924,8 @@ window.onload = () => {
             renderEntries(entriesCache);
         };
     }
+    
+
 };
 
 

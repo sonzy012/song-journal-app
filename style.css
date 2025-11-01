@@ -309,6 +309,28 @@ body {
     opacity: 1;
 }
 
+.btn-bookmark {
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid #e5e5ea;
+    color: #ffa500;
+    width: 32px;
+    height: 32px;
+    border-radius: 16px;
+    font-size: 18px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.btn-bookmark:hover {
+    background: #ffa500;
+    color: white;
+    transform: scale(1.1);
+}
+
 .btn-edit {
     background: rgba(255, 255, 255, 0.95);
     border: 1px solid #e5e5ea;

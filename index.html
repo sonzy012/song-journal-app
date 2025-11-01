@@ -47,7 +47,9 @@
             <div class="filters-container">
                 <div class="filter-section">
                     <div class="filter-label">📅 Date Range</div>
-                    <div id="dateFilters" class="filter-buttons"></div>
+                    <div id="dateFilters" class="filter-buttons">
+                        <button id="bookmarkedFilter" class="filter-btn" style="display:none;">⭐ Bookmarked</button>
+                    </div>
                 </div>
                 <div class="filter-section" id="tagFilterSection" style="display:none;">
                     <div class="filter-label">🏷️ Tags</div>
@@ -126,6 +128,7 @@
                 <div class="media-toolbar">
                     <input type="file" id="mediaInput" accept="image/*,video/*" multiple style="display:none;">
                     <button id="addMediaBtn" class="btn-media">📷 Add Photo/Video</button>
+                    <button id="detectLocationBtn" class="btn-media">🎯 Detect Location</button>
                     <button id="addLocationBtn" class="btn-media">📍 Add Location</button>
                     <select id="savedLocationSelect" class="saved-location-select" style="display:none;">
                         <option value="">Select saved location...</option>
