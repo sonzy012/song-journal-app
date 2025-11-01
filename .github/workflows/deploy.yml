@@ -28,5 +28,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
+          echo "=== Files to be committed ==="
+          git status
           git commit -m "Deploy to GitHub Pages"
+          echo "=== Files in commit ==="
+          git ls-tree -r HEAD --name-only
           git push -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:gh-pages
