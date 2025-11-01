@@ -1,0 +1,24 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Create config.js
+        run: |
+          echo "const CONFIG = {" > config.js
+          echo "  CLIENT_ID: '${{ secrets.CLIENT_ID }}'," >> config.js
+          echo "  MAPS_API_KEY: '${{ secrets.MAPS_API_KEY }}'" >> config.js
+          echo "};" >> config.js
+      
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: .

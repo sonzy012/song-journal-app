@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#4285f4">
+    <title>My Journal</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="signInScreen" class="sign-in-screen">
+        <div class="sign-in-content">
+            <div class="app-icon">📔</div>
+            <h1>My Journal</h1>
+            <p>Your personal space for thoughts and memories</p>
+            <button id="signInBtn" class="btn-sign-in">Continue with Google</button>
+        </div>
+    </div>
+
+    <div id="app" style="display:none;">
+        <header class="app-header">
+            <div class="header-left">
+                <h1>Journal</h1>
+            </div>
+            <div class="header-right">
+                <button id="selectBtn" class="btn-text" style="display:none;">Select</button>
+                <button id="cancelSelectBtn" class="btn-text" style="display:none;">Cancel</button>
+                <button id="deleteSelectedBtn" class="btn-delete" style="display:none;">Delete Selected</button>
+                <button id="newEntryBtn" class="btn-new">+ New Entry</button>
+                <button id="signOutBtn" class="btn-icon">⋯</button>
+            </div>
+        </header>
+
+        <div class="view-tabs">
+            <button id="timelineTab" class="tab-btn active">Timeline</button>
+            <button id="calendarTab" class="tab-btn">Calendar</button>
+            <button id="locationsTab" class="tab-btn">Locations</button>
+            <button id="eventsTab" class="tab-btn">Calendar Events</button>
+        </div>
+
+        <div class="search-bar">
+            <input type="text" id="searchInput" placeholder="🔍 Search entries or tags..." class="search-input">
+        </div>
+
+        <div id="timelineView" class="timeline">
+            <div id="entriesList"></div>
+        </div>
+
+        <div id="calendarView" class="calendar-container" style="display:none;">
+            <div class="calendar-header">
+                <button id="prevMonth" class="btn-icon">‹</button>
+                <h2 id="currentMonth"></h2>
+                <button id="nextMonth" class="btn-icon">›</button>
+            </div>
+            <div id="calendar" class="calendar-grid"></div>
+            <div id="dayEntries" class="day-entries"></div>
+        </div>
+
+        <div id="locationsView" class="locations-container" style="display:none;">
+            <div style="padding:20px;">
+                <button id="addSavedLocationBtn" class="btn-new">+ Add Location</button>
+            </div>
+            <div id="savedLocationsList" class="saved-locations-list"></div>
+        </div>
+
+        <div id="eventsView" class="events-container" style="display:none;">
+            <div style="padding:20px;display:flex;gap:10px;align-items:center;">
+                <select id="calendarSelect" style="padding:10px;border:1px solid #e5e5ea;border-radius:8px;font-size:15px;">
+                    <option value="">Loading calendars...</option>
+                </select>
+                <button id="importEventsBtn" class="btn-new">Import Events</button>
+                <select id="sortEventsSelect" style="padding:10px;border:1px solid #e5e5ea;border-radius:8px;font-size:15px;margin-left:auto;">
+                    <option value="desc">Newest First</option>
+                    <option value="asc">Oldest First</option>
+                </select>
+            </div>
+            <div id="calendarEventsList" class="calendar-events-list"></div>
+        </div>
+
+
+
+        <div id="editorModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button id="cancelBtn" class="btn-text">Cancel</button>
+                    <button id="saveBtn" class="btn-save">Save</button>
+                </div>
+                <input type="text" id="entryTitle" placeholder="Title (optional)" class="editor-title">
+                <textarea id="entryContent" placeholder="What's on your mind? (optional)" class="editor-content"></textarea>
+                <div class="tags-section">
+                    <input type="text" id="tagInput" placeholder="Add tags (press Enter)" class="tag-input">
+                    <div id="tagsPreview" class="tags-preview"></div>
+                </div>
+                <div class="media-toolbar">
+                    <input type="file" id="mediaInput" accept="image/*,video/*" multiple style="display:none;">
+                    <button id="addMediaBtn" class="btn-media">📷 Add Photo/Video</button>
+                    <button id="addLocationBtn" class="btn-media">📍 Add Location</button>
+                    <select id="savedLocationSelect" class="saved-location-select" style="display:none;">
+                        <option value="">Select saved location...</option>
+                    </select>
+                </div>
+                <div id="locationPreview" class="location-preview"></div>
+                <div id="mediaPreview" class="media-preview"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js"></script>
+    <script src="config.js"></script>
+    <script>
+        // Load Maps API with key from config after DOM loads
+        window.addEventListener('DOMContentLoaded', () => {
+            const script = document.createElement('script');
+            script.src = `https://maps.googleapis.com/maps/api/js?key=${CONFIG.MAPS_API_KEY}&libraries=places`;
+            document.head.appendChild(script);
+        });
+    </script>
+    <script src="app.js"></script>
+    <script src="pagination.js"></script>
+</body>
+</html>
