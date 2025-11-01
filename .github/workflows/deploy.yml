@@ -15,10 +15,7 @@ jobs:
           mkdir deploy
           cp index.html style.css app.js pagination.js manifest.json deploy/
           touch deploy/.nojekyll
-          echo "const CONFIG = {" > deploy/config.js
-          echo "  CLIENT_ID: '${{ secrets.CLIENT_ID }}'," >> deploy/config.js
-          echo "  MAPS_API_KEY: '${{ secrets.MAPS_API_KEY }}'" >> deploy/config.js
-          echo "};" >> deploy/config.js
+          printf "const CONFIG = {\n  CLIENT_ID: '%s',\n  MAPS_API_KEY: '%s'\n};\n" "${{ secrets.CLIENT_ID }}" "${{ secrets.MAPS_API_KEY }}" > deploy/config.js
           echo "=== config.js content ==="
           cat deploy/config.js
           echo "=== deploy directory ==="
