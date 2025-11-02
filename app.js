@@ -8,6 +8,7 @@ let folderId = null;
 let entriesCache = [];
 let isLoading = false;
 let mediaCache = {};
+let placesCache = {};
 
 function gapiLoaded() {
     gapi.load('client', initializeGapiClient);
@@ -69,7 +70,11 @@ function scheduleTokenRefresh(expiry) {
 }
 
 document.getElementById('signInBtn').onclick = () => {
-    tokenClient.requestAccessToken({ prompt: 'consent' });
+    if (tokenClient) {
+        tokenClient.requestAccessToken({ prompt: 'consent' });
+    } else {
+        alert('Authentication is still loading. Please wait a moment and try again.');
+    }
 };
 
 document.getElementById('signOutBtn').onclick = () => {
@@ -92,6 +97,16 @@ document.getElementById('newEntryBtn').onclick = () => {
         document.getElementById('entryDate').value = today;
         document.getElementById('entryTitle')?.focus();
     }
+};
+
+document.getElementById('syncBtn').onclick = async () => {
+    const btn = document.getElementById('syncBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳';
+    sessionStorage.removeItem('entriesCache');
+    await loadEntries(true);
+    btn.disabled = false;
+    btn.textContent = '🔄';
 };
 
 let mediaFiles = [];
@@ -254,6 +269,18 @@ function getLocationTags(types, name) {
         'indian_restaurant': 'indian',
         'thai_restaurant': 'thai',
         'vietnamese_restaurant': 'vietnamese',
+        'french_restaurant': 'french',
+        'greek_restaurant': 'greek',
+        'spanish_restaurant': 'spanish',
+        'middle_eastern_restaurant': 'middle-eastern',
+        'american_restaurant': 'american',
+        'seafood_restaurant': 'seafood',
+        'steak_house': 'steakhouse',
+        'pizza_restaurant': 'pizza',
+        'sushi_restaurant': 'sushi',
+        'ramen_restaurant': 'ramen',
+        'fast_food_restaurant': 'fast-food',
+        'asian_restaurant': 'asian',
         'supermarket': 'supermarket',
         'grocery_or_supermarket': 'supermarket',
         'convenience_store': 'convenience-store',
@@ -312,8 +339,33 @@ function getLocationTags(types, name) {
         }
     });
     
+    // Detect cuisine from restaurant name
+    const cuisineKeywords = {
+        'chinese': ['chinese', 'canton', 'szechuan', 'sichuan', 'dim sum', 'wok', 'noodle house'],
+        'japanese': ['japanese', 'sushi', 'ramen', 'izakaya', 'yakitori', 'tempura', 'teriyaki'],
+        'italian': ['italian', 'pizza', 'pizzeria', 'pasta', 'trattoria', 'osteria', 'ristorante'],
+        'thai': ['thai', 'pad thai', 'tom yum'],
+        'vietnamese': ['vietnamese', 'pho', 'banh mi'],
+        'korean': ['korean', 'bbq', 'kimchi', 'bibimbap'],
+        'indian': ['indian', 'curry', 'tandoori', 'biryani', 'masala'],
+        'mexican': ['mexican', 'taco', 'burrito', 'cantina'],
+        'greek': ['greek', 'gyro', 'souvlaki', 'taverna'],
+        'french': ['french', 'bistro', 'brasserie', 'cafe'],
+        'spanish': ['spanish', 'tapas', 'paella'],
+        'middle-eastern': ['kebab', 'falafel', 'shawarma', 'lebanese', 'turkish'],
+        'american': ['burger', 'grill', 'diner', 'steakhouse'],
+        'seafood': ['seafood', 'fish', 'oyster'],
+        'asian': ['asian', 'oriental'],
+        'coffee': ['coffee', 'cafe', 'espresso', 'starbucks']
+    };
+    
+    for (const [cuisine, keywords] of Object.entries(cuisineKeywords)) {
+        if (keywords.some(keyword => nameLower.includes(keyword))) {
+            tags.push(cuisine);
+        }
+    }
+    
     if (nameLower.includes('golf')) tags.push('golf');
-    if (nameLower.includes('starbucks') || nameLower.includes('coffee')) tags.push('coffee');
     if (nameLower.includes('mount') || nameLower.includes('hill') || nameLower.includes('summit')) tags.push('nature');
     if (nameLower.includes('beach')) tags.push('beach');
     if (nameLower.includes('trail') || nameLower.includes('hike')) tags.push('hiking');
@@ -479,23 +531,45 @@ function initMap() {
     const mapEl = document.getElementById('map');
     if (!mapEl) return;
     
-    const defaultLocation = { lat: 40.7128, lng: -74.0060 };
+    const adelaideLocation = { lat: -34.9285, lng: 138.6007 };
     
     try {
         map = new google.maps.Map(mapEl, {
-            center: defaultLocation,
+            center: adelaideLocation,
             zoom: 13
         });
         
         marker = new google.maps.Marker({
             map: map,
-            position: defaultLocation,
+            position: adelaideLocation,
             draggable: true
         });
         
         const input = document.getElementById('locationSearch');
-        const autocomplete = new google.maps.places.Autocomplete(input);
-        autocomplete.bindTo('bounds', map);
+        const autocomplete = new google.maps.places.Autocomplete(input, {
+            componentRestrictions: { country: 'au' },
+            fields: ['name', 'formatted_address', 'geometry', 'photos', 'place_id', 'types']
+        });
+        
+        const circle = new google.maps.Circle({
+            center: adelaideLocation,
+            radius: 50000
+        });
+        autocomplete.setBounds(circle.getBounds());
+        
+        let locationHistory = getLocationHistory();
+        
+        input.addEventListener('input', () => {
+            const query = input.value.toLowerCase();
+            if (query.length > 0) {
+                const matches = locationHistory.filter(loc => 
+                    loc.name.toLowerCase().includes(query)
+                );
+                if (matches.length > 0) {
+                    console.log('Location history matches:', matches);
+                }
+            }
+        });
         
         autocomplete.addListener('place_changed', () => {
             const place = autocomplete.getPlace();
@@ -520,6 +594,8 @@ function initMap() {
                     types: place.types || [],
                     autoTags: autoTags
                 };
+                
+                saveLocationToHistory(selectedLocation);
             }
         });
         
@@ -618,6 +694,13 @@ function convertDMSToDD(dms, ref) {
 async function suggestNearbyPlaces(lat, lng) {
     console.log('Suggesting nearby places for:', lat, lng);
     
+    const cacheKey = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+    if (placesCache[cacheKey]) {
+        console.log('Using cached places');
+        showLocationSuggestions(placesCache[cacheKey], lat, lng);
+        return;
+    }
+    
     if (typeof google === 'undefined' || !google.maps) {
         console.log('Google Maps not loaded yet');
         alert('Google Maps is still loading. Please wait and try again.');
@@ -636,7 +719,9 @@ async function suggestNearbyPlaces(lat, lng) {
         console.log('Places search status:', status, 'Results:', results);
         
         if (status === google.maps.places.PlacesServiceStatus.OK && results && results.length > 0) {
-            showLocationSuggestions(results.slice(0, 5), lat, lng);
+            const topResults = results.slice(0, 5);
+            placesCache[cacheKey] = topResults;
+            showLocationSuggestions(topResults, lat, lng);
         } else {
             console.log('No nearby places found or error:', status);
             alert('No nearby places found. Try using "Add Location" to search manually.');
@@ -1007,13 +1092,24 @@ document.getElementById('saveBtn').onclick = async () => {
         mediaFiles = [];
         selectedLocation = null;
         entryTags = [];
+        const wasEditing = editingEntryId;
         editingEntryId = null;
         existingMedia = [];
         const wasSelectedDate = selectedDate;
         selectedDate = null;
         document.getElementById('editorModal').classList.remove('active');
-        entriesCache = [];
-        await loadEntries(true);
+        
+        if (wasEditing) {
+            const index = entriesCache.findIndex(e => e.fileId === wasEditing);
+            if (index !== -1) {
+                entriesCache[index] = { ...entry, fileId: wasEditing };
+            }
+        } else {
+            entriesCache.unshift({ ...entry, fileId: 'temp_' + Date.now() });
+        }
+        
+        saveToSessionCache();
+        renderEntries(entriesCache);
         
         if (document.getElementById('calendarView').style.display !== 'none') {
             selectedDate = wasSelectedDate;
@@ -1027,6 +1123,39 @@ document.getElementById('saveBtn').onclick = async () => {
         saveBtn.textContent = 'Save';
     }
 };
+
+function saveToSessionCache() {
+    try {
+        const cacheData = {
+            entries: entriesCache,
+            timestamp: Date.now()
+        };
+        sessionStorage.setItem('entriesCache', JSON.stringify(cacheData));
+    } catch (e) {
+        console.warn('Failed to save to sessionStorage:', e);
+    }
+}
+
+function loadFromSessionCache() {
+    try {
+        const cached = sessionStorage.getItem('entriesCache');
+        if (!cached) return null;
+        
+        const cacheData = JSON.parse(cached);
+        const age = Date.now() - cacheData.timestamp;
+        const oneHour = 60 * 60 * 1000;
+        
+        if (age > oneHour) {
+            sessionStorage.removeItem('entriesCache');
+            return null;
+        }
+        
+        return cacheData.entries;
+    } catch (e) {
+        console.warn('Failed to load from sessionStorage:', e);
+        return null;
+    }
+}
 
 async function loadEntries(forceRefresh = false) {
     if (isLoading) return;
@@ -1051,13 +1180,13 @@ async function loadEntries(forceRefresh = false) {
         return;
     }
     
-    const cachedData = localStorage.getItem('entriesCache');
-    if (cachedData && !forceRefresh) {
-        try {
-            entriesCache = JSON.parse(cachedData);
+    if (!forceRefresh) {
+        const cachedEntries = loadFromSessionCache();
+        if (cachedEntries && cachedEntries.length > 0) {
+            entriesCache = cachedEntries;
             renderEntries(entriesCache);
-        } catch (e) {
-            console.error('Cache parse error:', e);
+            isLoading = false;
+            return;
         }
     }
 
@@ -1111,12 +1240,7 @@ async function loadEntries(forceRefresh = false) {
         );
 
         entriesCache = entries;
-        try {
-            localStorage.setItem('entriesCache', JSON.stringify(entries));
-            localStorage.setItem('entriesCacheTime', Date.now().toString());
-        } catch (e) {
-            console.error('Cache save error:', e);
-        }
+        saveToSessionCache();
         renderEntries(entries);
     } catch (error) {
         console.error('Error loading entries:', error);
@@ -1176,6 +1300,9 @@ document.getElementById('deleteSelectedBtn').onclick = async () => {
         });
     }
     
+    entriesCache = entriesCache.filter(e => !selectedEntries.includes(e.fileId));
+    saveToSessionCache();
+    
     selectionMode = false;
     selectedEntries = [];
     document.getElementById('selectBtn').style.display = 'none';
@@ -1183,8 +1310,7 @@ document.getElementById('deleteSelectedBtn').onclick = async () => {
     document.getElementById('deleteSelectedBtn').style.display = 'none';
     document.getElementById('newEntryBtn').style.display = 'block';
     document.getElementById('entriesList').classList.remove('selection-mode');
-    entriesCache = [];
-    await loadEntries(true);
+    renderEntries(entriesCache);
 };
 
 window.toggleEntrySelection = function(fileId) {
@@ -1196,6 +1322,76 @@ window.toggleEntrySelection = function(fileId) {
     }
     renderEntries(entriesCache);
 };
+
+function generateEntryCardHTML(entry, options = {}) {
+    const { showDate = true, showCheckbox = false, isSelected = false, dateKey = '' } = options;
+    
+    let locationHtml = '';
+    if (entry.location) {
+        const mapLink = encodeURIComponent(entry.location.name || entry.location.address);
+        const hasPhoto = entry.location.photo && entry.location.photo.startsWith('http');
+        const imageUrl = hasPhoto ? entry.location.photo : `https://maps.googleapis.com/maps/api/staticmap?center=${entry.location.lat},${entry.location.lng}&zoom=14&size=120x120&scale=2&markers=color:red%7C${entry.location.lat},${entry.location.lng}&key=${CONFIG.MAPS_API_KEY}`;
+        locationHtml = `
+            <div onclick="window.open('https://www.google.com/maps/search/?api=1&query=${mapLink}', '_blank')" style="cursor:pointer;display:inline-block;padding:8px;background:#f8f8f8;border-radius:8px;margin-top:8px;">
+                <img src="${imageUrl}" alt="${entry.location.name}" loading="lazy" style="width:100%;max-width:120px;aspect-ratio:1;object-fit:cover;border-radius:6px;background:#f0f0f0;display:block;">
+                <div style="color:#666;font-size:12px;margin-top:6px;text-align:center;">📍 ${entry.location.name}</div>
+            </div>
+        `;
+    }
+    
+    let mediaHtml = '';
+    if (entry.media && entry.media.length > 0) {
+        mediaHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;flex:2;align-content:center;">';
+        for (const media of entry.media) {
+            if (media.type === 'image') {
+                mediaHtml += `<img data-media-id="${media.id}" alt="Photo" loading="lazy" onclick="openMedia('${media.id}', 'image')" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#f0f0f0;cursor:pointer;">`;
+            } else {
+                const thumbStyle = media.thumbnail ? `background-image: url(${media.thumbnail}); background-size: cover; background-position: center;` : 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);';
+                mediaHtml += `<div style="width:100%;aspect-ratio:1;border-radius:8px;cursor:pointer;position:relative;${thumbStyle}" onclick="openMedia('${media.id}', 'video')">
+                    <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:32px;color:white;text-shadow:0 2px 4px rgba(0,0,0,0.3);">▶</div>
+                </div>`;
+            }
+        }
+        mediaHtml += '</div>';
+    }
+    
+    let tagsHtml = '';
+    if (entry.tags && entry.tags.length > 0) {
+        tagsHtml = '<div class="entry-tags">';
+        entry.tags.forEach(tag => {
+            tagsHtml += `<span class="entry-tag" onclick="searchByTag('${tag}')">${tag}</span>`;
+        });
+        tagsHtml += '</div>';
+    }
+    
+    let dateHtml = '';
+    if (showDate) {
+        const date = new Date(entry.timestamp);
+        const dateStr = date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        dateHtml = `<div class="entry-date" onclick="event.stopPropagation();${selectionMode ? `toggleEntrySelection('${entry.fileId}')` : `viewDateInCalendar('${dateKey}')`}" style="cursor:pointer;margin-bottom:6px;" title="${selectionMode ? 'Select entry' : 'View in calendar'}">${dateStr}</div>`;
+    }
+    
+    const checkboxHtml = showCheckbox ? `<div class="entry-checkbox ${isSelected ? 'checked' : ''}" onclick="event.stopPropagation();toggleEntrySelection('${entry.fileId}')"></div>` : '';
+    
+    return `
+        ${checkboxHtml}
+        <div style="display:flex;gap:12px;">
+            <div style="flex:1;min-width:0;max-width:33%;">
+                ${dateHtml}
+                <div class="entry-title" style="margin-bottom:6px;">${entry.title}</div>
+                ${tagsHtml}
+                ${locationHtml}
+                <div class="entry-preview" style="margin-top:8px;">${entry.content}</div>
+            </div>
+            ${mediaHtml}
+        </div>
+        <div class="entry-actions" style="${showCheckbox && selectionMode ? 'display:none;' : ''}">
+            <button class="btn-bookmark" onclick="event.stopPropagation();toggleBookmark('${entry.fileId}')" title="${entry.bookmarked ? 'Remove bookmark' : 'Bookmark'}">${entry.bookmarked ? '⭐' : '☆'}</button>
+            <button class="btn-edit" onclick="event.stopPropagation();editEntry('${entry.fileId}')" title="Edit">✏️</button>
+            <button class="btn-delete" onclick="event.stopPropagation();deleteEntry('${entry.fileId}')" title="Delete">🗑️</button>
+        </div>
+    `;
+}
 
 function renderEntries(entries) {
     const entriesList = document.getElementById('entriesList');
@@ -1286,68 +1482,16 @@ function renderEntries(entries) {
         const entryDiv = document.createElement('div');
         entryDiv.className = 'entry-card';
         
-        const date = new Date(entry.timestamp);
-        const dateStr = date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-        const dateKey = entry.date;
-        
-        let locationHtml = '';
-        if (entry.location) {
-            const mapLink = encodeURIComponent(entry.location.name || entry.location.address);
-            const hasPhoto = entry.location.photo && entry.location.photo.startsWith('http');
-            const imageUrl = hasPhoto ? entry.location.photo : `https://maps.googleapis.com/maps/api/staticmap?center=${entry.location.lat},${entry.location.lng}&zoom=14&size=200x200&markers=color:red%7C${entry.location.lat},${entry.location.lng}&key=${CONFIG.MAPS_API_KEY}`;
-            locationHtml = `
-                <div class="entry-location" onclick="window.open('https://www.google.com/maps/search/?api=1&query=${mapLink}', '_blank')" style="cursor:pointer;padding:8px;background:#f8f8f8;border-radius:8px;margin:8px 0;">
-                    <img src="${imageUrl}" alt="${entry.location.name}" loading="lazy" style="width:100%;max-width:150px;aspect-ratio:1;object-fit:cover;border-radius:6px;background:#f0f0f0;">
-                    <div style="padding:6px 0;color:#666;font-size:13px;">📍 ${entry.location.name}</div>
-                </div>
-            `;
-        }
-        
-        let mediaHtml = '';
-        if (entry.media && entry.media.length > 0) {
-            mediaHtml = '<div class="entry-media">';
-            for (const media of entry.media) {
-                if (media.type === 'image') {
-                    mediaHtml += `<img data-media-id="${media.id}" alt="Photo" loading="lazy" onclick="openMedia('${media.id}', 'image')" style="background:#f0f0f0;">`;
-                } else {
-                    const thumbStyle = media.thumbnail ? `background-image: url(${media.thumbnail}); background-size: cover; background-position: center;` : 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);';
-                    mediaHtml += `<div class="video-thumbnail" style="${thumbStyle}" onclick="openMedia('${media.id}', 'video')">
-                        <div class="play-icon-large">▶</div>
-                    </div>`;
-                }
-            }
-            mediaHtml += '</div>';
-        }
-        
-        let tagsHtml = '';
-        if (entry.tags && entry.tags.length > 0) {
-            tagsHtml = '<div class="entry-tags">';
-            entry.tags.forEach(tag => {
-                tagsHtml += `<span class="entry-tag" onclick="searchByTag('${tag}')">${tag}</span>`;
-            });
-            tagsHtml += '</div>';
-        }
-        
         if (selectedEntries.includes(entry.fileId)) {
             entryDiv.classList.add('selected');
         }
         
-        const checkboxHtml = selectionMode ? `<div class="entry-checkbox ${selectedEntries.includes(entry.fileId) ? 'checked' : ''}" onclick="event.stopPropagation();toggleEntrySelection('${entry.fileId}')"></div>` : '';
-        
-        entryDiv.innerHTML = `
-            ${checkboxHtml}
-            <div class="entry-date" onclick="event.stopPropagation();${selectionMode ? `toggleEntrySelection('${entry.fileId}')` : `viewDateInCalendar('${dateKey}')`}" style="cursor:pointer;" title="${selectionMode ? 'Select entry' : 'View in calendar'}">${dateStr}</div>
-            <div class="entry-title">${entry.title}</div>
-            ${tagsHtml}
-            ${locationHtml}
-            ${mediaHtml}
-            <div class="entry-preview">${entry.content}</div>
-            <div class="entry-actions" style="${selectionMode ? 'display:none;' : ''}">
-                <button class="btn-bookmark" onclick="event.stopPropagation();toggleBookmark('${entry.fileId}')" title="${entry.bookmarked ? 'Remove bookmark' : 'Bookmark'}">${entry.bookmarked ? '⭐' : '☆'}</button>
-                <button class="btn-edit" onclick="event.stopPropagation();editEntry('${entry.fileId}')" title="Edit">✏️</button>
-                <button class="btn-delete" onclick="event.stopPropagation();deleteEntry('${entry.fileId}')" title="Delete">🗑️</button>
-            </div>
-        `;
+        entryDiv.innerHTML = generateEntryCardHTML(entry, {
+            showDate: true,
+            showCheckbox: selectionMode,
+            isSelected: selectedEntries.includes(entry.fileId),
+            dateKey: entry.date
+        });
         
         if (selectionMode) {
             entryDiv.onclick = () => toggleEntrySelection(entry.fileId);
@@ -1393,8 +1537,9 @@ async function deleteEntry(fileId) {
         headers: { Authorization: 'Bearer ' + accessToken },
     });
     
-    entriesCache = [];
-    await loadEntries(true);
+    entriesCache = entriesCache.filter(e => e.fileId !== fileId);
+    saveToSessionCache();
+    renderEntries(entriesCache);
 }
 
 window.toggleBookmark = async function(fileId) {
@@ -1413,6 +1558,7 @@ window.toggleBookmark = async function(fileId) {
         body: blob,
     });
     
+    saveToSessionCache();
     renderEntries(entriesCache);
 };
 
@@ -1655,6 +1801,13 @@ document.getElementById('nextMonth').onclick = () => {
     renderCalendar();
 };
 
+document.getElementById('todayBtn').onclick = () => {
+    const today = new Date();
+    currentCalendarDate = new Date(today.getFullYear(), today.getMonth(), 1);
+    selectedDate = null;
+    renderCalendar();
+};
+
 function renderCalendar() {
     const year = currentCalendarDate.getFullYear();
     const month = currentCalendarDate.getMonth();
@@ -1755,55 +1908,7 @@ function showDayEntries(dateStr, entries) {
         entries.forEach(entry => {
             const entryDiv = document.createElement('div');
             entryDiv.className = 'entry-card';
-            
-            let locationHtml = '';
-            if (entry.location) {
-                const mapUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${entry.location.lat},${entry.location.lng}&zoom=15&size=400x200&markers=color:red%7C${entry.location.lat},${entry.location.lng}&key=${CONFIG.MAPS_API_KEY}`;
-                locationHtml = `
-                    <div class="entry-location" onclick="window.open('https://www.google.com/maps?q=${entry.location.lat},${entry.location.lng}', '_blank')" style="cursor:pointer;padding:12px;background:#f8f8f8;border-radius:8px;margin:12px 0;">
-                        <img src="${mapUrl}" alt="Map" style="width:100%;border-radius:8px;" onerror="this.style.display='none';this.nextElementSibling.style.background='#e8e8e8';this.nextElementSibling.style.padding='20px';this.nextElementSibling.innerHTML='📍 ${entry.location.name}<br><small style=color:#999>Tap to view on map</small>';">
-                        <div style="padding:8px 0;color:#666;">📍 ${entry.location.name}</div>
-                    </div>
-                `;
-            }
-            
-            let mediaHtml = '';
-            if (entry.media && entry.media.length > 0) {
-                mediaHtml = '<div class="entry-media">';
-                for (const media of entry.media) {
-                    if (media.type === 'image') {
-                        mediaHtml += `<img data-media-id="${media.id}" alt="Photo" loading="lazy" onclick="openMedia('${media.id}', 'image')" style="background:#f0f0f0;">`;
-                    } else {
-                        const thumbStyle = media.thumbnail ? `background-image: url(${media.thumbnail}); background-size: cover; background-position: center;` : 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);';
-                        mediaHtml += `<div class="video-thumbnail" style="${thumbStyle}" onclick="openMedia('${media.id}', 'video')">
-                            <div class="play-icon-large">▶</div>
-                        </div>`;
-                    }
-                }
-                mediaHtml += '</div>';
-            }
-            
-            let tagsHtml = '';
-            if (entry.tags && entry.tags.length > 0) {
-                tagsHtml = '<div class="entry-tags">';
-                entry.tags.forEach(tag => {
-                    tagsHtml += `<span class="entry-tag" onclick="searchByTag('${tag}')">${tag}</span>`;
-                });
-                tagsHtml += '</div>';
-            }
-            
-            entryDiv.innerHTML = `
-                <div class="entry-title">${entry.title}</div>
-                ${tagsHtml}
-                ${locationHtml}
-                ${mediaHtml}
-                <div class="entry-preview">${entry.content}</div>
-                <div class="entry-actions" style="position:relative;opacity:1;margin-top:12px;">
-                    <button class="btn-bookmark" onclick="event.stopPropagation();toggleBookmark('${entry.fileId}')" title="${entry.bookmarked ? 'Remove bookmark' : 'Bookmark'}">${entry.bookmarked ? '⭐' : '☆'}</button>
-                    <button class="btn-edit" onclick="event.stopPropagation();editEntry('${entry.fileId}')" title="Edit">✏️</button>
-                    <button class="btn-delete" onclick="event.stopPropagation();deleteEntry('${entry.fileId}')" title="Delete">🗑️</button>
-                </div>
-            `;
+            entryDiv.innerHTML = generateEntryCardHTML(entry, { showDate: false });
             dayEntries.appendChild(entryDiv);
         });
         
@@ -2136,19 +2241,18 @@ function renderSavedLocations() {
         list.innerHTML = '';
         savedLocations.forEach(location => {
             const card = document.createElement('div');
-            card.className = 'entry-card';
-            card.style.cursor = 'default';
+            card.style.cssText = 'display:flex;align-items:center;gap:12px;padding:12px;background:white;border-radius:8px;margin-bottom:8px;';
             
             const hasPhoto = location.photo && location.photo.startsWith('http');
-            const imageUrl = hasPhoto ? location.photo : `https://maps.googleapis.com/maps/api/staticmap?center=${location.lat},${location.lng}&zoom=14&size=200x200&markers=color:red%7C${location.lat},${location.lng}&key=${CONFIG.MAPS_API_KEY}`;
+            const imageUrl = hasPhoto ? location.photo : `https://maps.googleapis.com/maps/api/staticmap?center=${location.lat},${location.lng}&zoom=14&size=80x80&scale=2&markers=color:red%7C${location.lat},${location.lng}&key=${CONFIG.MAPS_API_KEY}`;
             
             card.innerHTML = `
-                <div class="entry-title">${location.name}</div>
-                <div style="color:#666;font-size:14px;margin:8px 0;">${location.address}</div>
-                <img src="${imageUrl}" alt="${location.name}" loading="lazy" style="width:100%;max-width:150px;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#f0f0f0;margin:8px 0;">
-                <div class="entry-actions">
-                    <button class="btn-delete" onclick="deleteSavedLocation('${location.id}')">Delete</button>
+                <img src="${imageUrl}" alt="${location.name}" loading="lazy" style="width:60px;height:60px;object-fit:cover;border-radius:6px;background:#f0f0f0;flex-shrink:0;">
+                <div style="flex:1;min-width:0;">
+                    <div style="font-weight:600;font-size:15px;margin-bottom:2px;">${location.name}</div>
+                    <div style="color:#666;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${location.address}</div>
                 </div>
+                <button class="btn-delete" onclick="deleteSavedLocation('${location.id}')" style="flex-shrink:0;">🗑️</button>
             `;
             list.appendChild(card);
         });
@@ -2270,7 +2374,7 @@ function renderLocationHistory(filterCategory = 'all') {
         card.style.cursor = 'pointer';
         
         const hasPhoto = item.location.photo && item.location.photo.startsWith('http');
-        const imageUrl = hasPhoto ? item.location.photo : `https://maps.googleapis.com/maps/api/staticmap?center=${item.location.lat},${item.location.lng}&zoom=14&size=200x200&markers=color:red%7C${item.location.lat},${item.location.lng}&key=${CONFIG.MAPS_API_KEY}`;
+        const imageUrl = hasPhoto ? item.location.photo : `https://maps.googleapis.com/maps/api/staticmap?center=${item.location.lat},${item.location.lng}&zoom=14&size=150x150&scale=1&markers=color:red%7C${item.location.lat},${item.location.lng}&key=${CONFIG.MAPS_API_KEY}`;
         
         const visitCount = item.dates.length;
         const lastVisit = new Date(item.dates[item.dates.length - 1]).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -2338,6 +2442,26 @@ function showLocationEntries(locationName, entries) {
 }
 
 window.deleteSavedLocation = deleteSavedLocation;
+
+function getLocationHistory() {
+    const history = [];
+    entriesCache.forEach(entry => {
+        if (entry.location && entry.location.name) {
+            const exists = history.find(loc => 
+                loc.placeId === entry.location.placeId || 
+                (loc.name === entry.location.name && loc.address === entry.location.address)
+            );
+            if (!exists) {
+                history.push(entry.location);
+            }
+        }
+    });
+    return history;
+}
+
+function saveLocationToHistory(location) {
+    console.log('Location selected:', location.name);
+}
 
 async function loadCalendarList() {
     const select = document.getElementById('calendarSelect');
@@ -2569,10 +2693,16 @@ async function loadGooglePhotos() {
     }
 }
 
-document.getElementById('importEventsBtn').onclick = async () => {
-    await importCalendarEvents();
-};
+const importEventsBtn = document.getElementById('importEventsBtn');
+if (importEventsBtn) {
+    importEventsBtn.onclick = async () => {
+        await importCalendarEvents();
+    };
+}
 
-document.getElementById('loadPhotosBtn').onclick = async () => {
-    await loadGooglePhotos();
-};
+const loadPhotosBtn = document.getElementById('loadPhotosBtn');
+if (loadPhotosBtn) {
+    loadPhotosBtn.onclick = async () => {
+        await loadGooglePhotos();
+    };
+}

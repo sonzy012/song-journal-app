@@ -775,19 +775,44 @@ body {
 }
 
 .calendar-day.today {
-    background: #e3f2fd;
+    background: #ff3b30;
+    color: white;
     font-weight: 600;
+}
+
+.btn-today {
+    background: #007aff;
+    color: white;
+    border: none;
+    padding: 6px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.btn-today:hover {
+    opacity: 0.8;
 }
 
 .calendar-day.has-entry {
-    background: #007aff;
+    background: #34c759;
     color: white;
     font-weight: 600;
 }
 
+.calendar-day.has-entry.today {
+    background: #ff3b30;
+}
+
 .calendar-day.selected {
-    background: #667eea;
+    background: #3c3c43;
     color: white;
+}
+
+.calendar-day.selected.today {
+    background: #ff3b30;
 }
 
 .calendar-day:not(.header):hover {

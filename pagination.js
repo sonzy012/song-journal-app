@@ -1,6 +1,9 @@
 // Override renderCalendarEvents with pagination
-const originalRenderCalendarEvents = renderCalendarEvents;
-renderCalendarEvents = function() {
+if (typeof renderCalendarEvents !== 'undefined') {
+    const originalRenderCalendarEvents = renderCalendarEvents;
+}
+
+window.renderCalendarEvents = function() {
     const list = document.getElementById('calendarEventsList');
     if (!list) return;
     
