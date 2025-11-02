@@ -860,29 +860,81 @@ function removeMedia(index) {
     preview.children[index].remove();
 }
 
+async function uploadLargeFile(file, metadata, token) {
+    const initResponse = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id', {
+        method: 'POST',
+        headers: {
+            Authorization: 'Bearer ' + token,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(metadata),
+    });
+    
+    const uploadUrl = initResponse.headers.get('Location');
+    
+    return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('PUT', uploadUrl);
+        xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+        
+        xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+                const percent = Math.round((e.loaded / e.total) * 100);
+                const saveBtn = document.getElementById('saveBtn');
+                saveBtn.innerHTML = `<span class="spinner"></span> ${percent}%`;
+            }
+        };
+        
+        xhr.onload = () => {
+            if (xhr.status === 200) {
+                resolve(JSON.parse(xhr.responseText));
+            } else {
+                reject(new Error('Upload failed'));
+            }
+        };
+        
+        xhr.onerror = () => reject(new Error('Upload failed'));
+        xhr.send(file);
+    });
+}
+
 function generateVideoThumbnail(file) {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
         const video = document.createElement('video');
         video.preload = 'metadata';
         video.muted = true;
         video.playsInline = true;
         
+        const timeout = setTimeout(() => {
+            URL.revokeObjectURL(video.src);
+            reject(new Error('Thumbnail timeout'));
+        }, 5000);
+        
         video.onloadeddata = () => {
-            video.currentTime = 1;
+            video.currentTime = Math.min(1, video.duration / 2);
         };
         
         video.onseeked = () => {
+            clearTimeout(timeout);
             const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            canvas.getContext('2d').drawImage(video, 0, 0);
-            resolve(canvas.toDataURL('image/jpeg', 0.7));
+            canvas.width = Math.min(video.videoWidth, 400);
+            canvas.height = Math.min(video.videoHeight, 400);
+            canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
             URL.revokeObjectURL(video.src);
+            resolve(canvas.toDataURL('image/jpeg', 0.5));
+        };
+        
+        video.onerror = () => {
+            clearTimeout(timeout);
+            URL.revokeObjectURL(video.src);
+            reject(new Error('Video load failed'));
         };
         
         video.src = URL.createObjectURL(file);
     });
 }
+
+
 
 document.getElementById('editorModal').onclick = (e) => {
     if (e.target.id === 'editorModal') {
@@ -1004,22 +1056,30 @@ document.getElementById('saveBtn').onclick = async () => {
         const mediaFolder = await getOrCreateFolder('media', monthFolderId);
         const mediaUrls = [];
 
-        for (const file of mediaFiles) {
+        for (let i = 0; i < mediaFiles.length; i++) {
+            const file = mediaFiles[i];
+            saveBtn.innerHTML = `<span class="spinner"></span> Uploading ${i + 1}/${mediaFiles.length}...`;
+            
             const mediaMetadata = {
                 name: `${Date.now()}_${file.name}`,
                 parents: [mediaFolder],
             };
             
-            const mediaForm = new FormData();
-            mediaForm.append('metadata', new Blob([JSON.stringify(mediaMetadata)], { type: 'application/json' }));
-            mediaForm.append('file', file);
-
-            const uploadResponse = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webContentLink', {
-                method: 'POST',
-                headers: { Authorization: 'Bearer ' + accessToken },
-                body: mediaForm,
-            });
-            const uploadData = await uploadResponse.json();
+            let uploadData;
+            if (file.size > 5 * 1024 * 1024) {
+                uploadData = await uploadLargeFile(file, mediaMetadata, accessToken);
+            } else {
+                const mediaForm = new FormData();
+                mediaForm.append('metadata', new Blob([JSON.stringify(mediaMetadata)], { type: 'application/json' }));
+                mediaForm.append('file', file);
+                const uploadResponse = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', {
+                    method: 'POST',
+                    headers: { Authorization: 'Bearer ' + accessToken },
+                    body: mediaForm,
+                });
+                if (!uploadResponse.ok) throw new Error(`Upload failed: ${uploadResponse.statusText}`);
+                uploadData = await uploadResponse.json();
+            }
             
             const mediaItem = {
                 id: uploadData.id,
@@ -1027,7 +1087,11 @@ document.getElementById('saveBtn').onclick = async () => {
             };
             
             if (mediaItem.type === 'video') {
-                mediaItem.thumbnail = await generateVideoThumbnail(file);
+                try {
+                    mediaItem.thumbnail = await generateVideoThumbnail(file);
+                } catch (e) {
+                    console.warn('Thumbnail generation failed:', e);
+                }
             }
             
             mediaUrls.push(mediaItem);
@@ -1346,7 +1410,7 @@ function generateEntryCardHTML(entry, options = {}) {
             if (media.type === 'image') {
                 mediaHtml += `<img data-media-id="${media.id}" alt="Photo" loading="lazy" onclick="openMedia('${media.id}', 'image')" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#f0f0f0;cursor:pointer;">`;
             } else {
-                const thumbStyle = media.thumbnail ? `background-image: url(${media.thumbnail}); background-size: cover; background-position: center;` : 'background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);';
+                const thumbStyle = media.thumbnail ? `background-image:url(${media.thumbnail});background-size:cover;background-position:center;` : 'background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);';
                 mediaHtml += `<div style="width:100%;aspect-ratio:1;border-radius:8px;cursor:pointer;position:relative;${thumbStyle}" onclick="openMedia('${media.id}', 'video')">
                     <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:32px;color:white;text-shadow:0 2px 4px rgba(0,0,0,0.3);">▶</div>
                 </div>`;
